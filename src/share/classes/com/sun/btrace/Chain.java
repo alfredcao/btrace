@@ -1,4 +1,4 @@
-package objectexplorer;
+package com.sun.btrace;
 
 import com.google.common.base.Preconditions;
 

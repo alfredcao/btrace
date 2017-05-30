@@ -25,63 +25,65 @@
 
 package com.sun.btrace;
 
-import com.sun.btrace.annotations.ProbeClassName;
-import com.sun.btrace.annotations.ProbeMethodName;
-import com.sun.btrace.annotations.Self;
-import java.lang.reflect.Modifier;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.regex.PatternSyntaxException;
-import sun.reflect.Reflection;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
+import com.google.common.collect.ImmutableList;
 import com.sun.btrace.aggregation.Aggregation;
 import com.sun.btrace.aggregation.AggregationFunction;
 import com.sun.btrace.aggregation.AggregationKey;
 import com.sun.btrace.annotations.OnMethod;
+import com.sun.btrace.annotations.ProbeClassName;
+import com.sun.btrace.annotations.ProbeMethodName;
+import com.sun.btrace.annotations.Self;
+import sun.reflect.Reflection;
+
 import java.io.Serializable;
 import java.lang.management.MemoryUsage;
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
-import java.util.Collection;
-import java.util.Deque;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.lang.reflect.Modifier;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * This class is an all-in-one wrapper for BTrace DSL methods
+ *
  * @author A. Sundararajan
  * @author Jaroslav Bachorik
  */
 public class BTraceUtils {
+    // standard stack depth decrement for Reflection.getCallerClass() calls
+    private static final int STACK_DEC = 2;
+
     static {
         BTraceRuntime.initUnsafe();
     }
 
-    // standard stack depth decrement for Reflection.getCallerClass() calls
-    private static final int STACK_DEC = 2;
-
     // do not allow object creation!
-    private BTraceUtils() {}
+    private BTraceUtils() {
+    }
 
     // Thread and stack access
 
     /**
      * Tests whether this thread has been interrupted.  The <i>interrupted
      * status</i> of the thread is unaffected by this method.
-     *
+     * <p>
      * <p>A thread interruption ignored because a thread was not alive
      * at the time of the interrupt will be reflected by this method
      * returning false.
      *
      * @return <code>true</code> if this thread has been interrupted;
-     *         <code>false</code> otherwise.
+     * <code>false</code> otherwise.
      */
     public static boolean isInteruppted() {
         return Threads.isInteruppted();
@@ -99,7 +101,7 @@ public class BTraceUtils {
      * atmost given number of frames.
      *
      * @param numFrames number of frames to be printed. When this is
-     *        negative all frames are printed.
+     *                  negative all frames are printed.
      */
     public static void jstack(int numFrames) {
         Threads.jstack(2, numFrames);
@@ -117,7 +119,7 @@ public class BTraceUtils {
      * atmost given number of frames.
      *
      * @param numFrames number of frames to be printed. When this is
-     *        negative all frames are printed.
+     *                  negative all frames are printed.
      */
     public static void jstackAll(int numFrames) {
         Threads.jstackAll(2, numFrames);
@@ -136,8 +138,8 @@ public class BTraceUtils {
      * Returns the stack trace of the current thread as a String
      * but includes atmost the given number of frames.
      *
-     * @param  numFrames number of frames to be included. When this is
-     *         negative all frames are included.
+     * @param numFrames number of frames to be included. When this is
+     *                  negative all frames are included.
      * @return the stack trace as a String.
      */
     public static String jstackStr(int numFrames) {
@@ -158,7 +160,7 @@ public class BTraceUtils {
      * of all threads as a String.
      *
      * @param numFrames number of frames to be included. When this is
-     *        negative all frames are included.
+     *                  negative all frames are included.
      * @return the stack traces as a String.
      */
     public static String jstackAllStr(int numFrames) {
@@ -207,7 +209,7 @@ public class BTraceUtils {
     /**
      * Returns a reference to the currently executing thread object.
      *
-     * @return  the currently executing thread.
+     * @return the currently executing thread.
      */
     public static Thread currentThread() {
         return Threads.currentThread();
@@ -235,17 +237,17 @@ public class BTraceUtils {
     /**
      * Returns <tt>true</tt> if and only if the current thread holds the
      * monitor lock on the specified object.
-     *
+     * <p>
      * <p>This method is designed to allow a program to assert that
      * the current thread already holds a specified lock:
      * <pre>
      *     assert Thread.holdsLock(obj);
      * </pre>
      *
-     * @param  obj the object on which to test lock ownership
-     * @throws NullPointerException if obj is <tt>null</tt>
+     * @param obj the object on which to test lock ownership
      * @return <tt>true</tt> if the current thread holds the monitor lock on
-     *         the specified object.
+     * the specified object.
+     * @throws NullPointerException if obj is <tt>null</tt>
      */
     public static boolean holdsLock(Object obj) {
         return Threads.holdsLock(obj);
@@ -263,7 +265,7 @@ public class BTraceUtils {
      * stack trace of the deadlocked threads.
      *
      * @param stackTrace boolean flag to specify whether to
-     *        print stack traces of deadlocked threads or not.
+     *                   print stack traces of deadlocked threads or not.
      */
     public static void deadlocks(boolean stackTrace) {
         Threads.deadlocks(stackTrace);
@@ -279,6 +281,7 @@ public class BTraceUtils {
     }
 
     // class loader access
+
     /**
      * Returns the class loader for the given class. Some implementations may use
      * null to represent the bootstrap class loader. This method will return
@@ -297,7 +300,7 @@ public class BTraceUtils {
      * will return <tt>null</tt> in such implementations if this class loader's
      * parent is the bootstrap class loader.
      *
-     * @param  loader the loader for which the parent loader is returned
+     * @param loader the loader for which the parent loader is returned
      * @return The parent <tt>ClassLoader</tt>
      */
     public static ClassLoader parentLoader(ClassLoader loader) {
@@ -315,7 +318,7 @@ public class BTraceUtils {
      * calling Object.toString() override. For non-bootstrap classes,
      * default toString() value [className@hashCode] is returned.
      *
-     * @param  obj the object whose string representation is returned
+     * @param obj the object whose string representation is returned
      * @return a string representation of the given object.
      */
     public static String str(Object obj) {
@@ -341,7 +344,7 @@ public class BTraceUtils {
      * the identity hash code is returned.
      *
      * @param obj the Object whose hash code is returned.
-     * @return  a hash code value for the given object.
+     * @return a hash code value for the given object.
      */
     public static int hash(Object obj) {
         if (obj.getClass().getClassLoader() == null) {
@@ -357,7 +360,7 @@ public class BTraceUtils {
      * whether or not the given object's class overrides
      * hashCode(). The hash code for the null reference is zero.
      *
-     * @param  obj object for which the hashCode is to be calculated
+     * @param obj object for which the hashCode is to be calculated
      * @return the hashCode
      */
     public static int identityHashCode(Object obj) {
@@ -370,20 +373,21 @@ public class BTraceUtils {
      * override. For non-bootstrap classes, the reference identity comparison
      * is done.
      *
-     * @param  obj1 first object to compare equality
-     * @param  obj2 second object to compare equality
+     * @param obj1 first object to compare equality
+     * @param obj2 second object to compare equality
      * @return <code>true</code> if the given objects are equal;
-     *         <code>false</code> otherwise.
+     * <code>false</code> otherwise.
      */
     public static boolean compare(Object obj1, Object obj2) {
         return BTraceRuntime.compare(obj1, obj2);
     }
 
     // reflection
+
     /**
      * Returns the runtime class of the given Object.
      *
-     * @param  obj the Object whose Class is returned
+     * @param obj the Object whose Class is returned
      * @return the Class object of given object
      */
     public static Class classOf(Object obj) {
@@ -393,11 +397,11 @@ public class BTraceUtils {
     /**
      * Checks whether the provided object is an instance of the named class.
      * <cite>Note: this method can be rather CPU intensive, use with caution</cite>
-     * @param obj the object to check
+     *
+     * @param obj       the object to check
      * @param className the class name; as a special case {@code void} can be provided
      *                  to check whether the instance is a void value wrapper - {@linkplain AnyType.VOID}
      * @return {@code true} if the object can be assigned to an instance of 'className' type
-     *
      * @since 1.3.5
      */
     public static boolean instanceOf(Object obj, String className) {
@@ -407,7 +411,7 @@ public class BTraceUtils {
     /**
      * Returns the Class object representing the class or interface
      * that declares the field represented by the given Field object.
-
+     *
      * @param field whose declaring Class is returned
      */
     public static Class declaringClass(Field field) {
@@ -424,7 +428,7 @@ public class BTraceUtils {
     /**
      * Returns the name of the Field object.
      *
-     * @param  field Field for which name is returned
+     * @param field Field for which name is returned
      * @return name of the given field
      */
     public static String name(Field field) {
@@ -434,7 +438,7 @@ public class BTraceUtils {
     /**
      * Returns the type of the Field object.
      *
-     * @param  field Field for which type is returned
+     * @param field Field for which type is returned
      * @return type of the given field
      */
     public static Class type(Field field) {
@@ -501,9 +505,9 @@ public class BTraceUtils {
      * raising a <code>ClassCastException.</code> It returns <code>false</code>
      * otherwise.
      *
-     * @param  clazz the class that is checked.
-     * @param  obj the object to check.
-     * @return  true if <code>obj</code> is an instance of the given class.
+     * @param clazz the class that is checked.
+     * @param obj   the object to check.
+     * @return true if <code>obj</code> is an instance of the given class.
      */
     public static boolean isInstance(Class clazz, Object obj) {
         return Reflective.isInstance(clazz, obj);
@@ -530,8 +534,8 @@ public class BTraceUtils {
      * interface type.
      *
      * @param clazz the Class object to check.
-     * @return  <code>true</code> if the Class represents an interface;
-     *          <code>false</code> otherwise.
+     * @return <code>true</code> if the Class represents an interface;
+     * <code>false</code> otherwise.
      */
     public static boolean isInterface(Class clazz) {
         return Reflective.isInterface(clazz);
@@ -541,8 +545,8 @@ public class BTraceUtils {
      * Determines if the given <code>Class</code> object represents an array class.
      *
      * @param clazz Class object to check.
-     * @return  <code>true</code> if the given object represents an array class;
-     *          <code>false</code> otherwise.
+     * @return <code>true</code> if the given object represents an array class;
+     * <code>false</code> otherwise.
      */
     public static boolean isArray(Class clazz) {
         return Reflective.isArray(clazz);
@@ -572,8 +576,8 @@ public class BTraceUtils {
      * field if throwException parameter is <code>false</code>. Else throws a <code>RuntimeException</code>
      * when field is not found.
      *
-     * @param clazz Class whose field is returned
-     * @param name the name of the field
+     * @param clazz          Class whose field is returned
+     * @param name           the name of the field
      * @param throwException whether to throw exception on failing to find field or not
      * @return the <code>Field</code> object for the specified field in this
      * class
@@ -590,7 +594,7 @@ public class BTraceUtils {
      * when field is not found.
      *
      * @param clazz Class whose field is returned
-     * @param name the name of the field
+     * @param name  the name of the field
      * @return the <code>Field</code> object for the specified field in this
      * class
      */
@@ -606,8 +610,8 @@ public class BTraceUtils {
      * field if throwException parameter is <code>false</code>. Else throws a <code>RuntimeException</code>
      * when field is not found.
      *
-     * @param clazz Class whose field is returned
-     * @param name the name of the field
+     * @param clazz          Class whose field is returned
+     * @param name           the name of the field
      * @param throwException whether to throw exception on failing to find field or not
      * @return the <code>Field</code> object for the specified field in this
      * class
@@ -625,7 +629,7 @@ public class BTraceUtils {
      * when field is not found.
      *
      * @param clazz Class whose field is returned
-     * @param name the name of the field
+     * @param name  the name of the field
      * @return the <code>Field</code> object for the specified field in this
      * class
      */
@@ -650,8 +654,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>byte</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>byte</code> value
-     * from
+     * @param obj   the object to extract the <code>byte</code> value
+     *              from
      * @return the value of the <code>byte</code> field
      */
     public static byte getByte(Field field, Object obj) {
@@ -672,8 +676,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>short</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>short</code> value
-     * from
+     * @param obj   the object to extract the <code>short</code> value
+     *              from
      * @return the value of the <code>short</code> field
      */
     public static short getShort(Field field, Object obj) {
@@ -694,8 +698,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>int</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>int</code> value
-     * from
+     * @param obj   the object to extract the <code>int</code> value
+     *              from
      * @return the value of the <code>int</code> field
      */
     public static int getInt(Field field, Object obj) {
@@ -716,8 +720,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>long</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>long</code> value
-     * from
+     * @param obj   the object to extract the <code>long</code> value
+     *              from
      * @return the value of the <code>long</code> field
      */
     public static long getLong(Field field, Object obj) {
@@ -738,8 +742,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>float</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>float</code> value
-     * from
+     * @param obj   the object to extract the <code>float</code> value
+     *              from
      * @return the value of the <code>float</code> field
      */
     public static float getFloat(Field field, Object obj) {
@@ -760,8 +764,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>double</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>double</code> value
-     * from
+     * @param obj   the object to extract the <code>double</code> value
+     *              from
      * @return the value of the <code>double</code> field
      */
     public static double getDouble(Field field, Object obj) {
@@ -782,8 +786,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>boolean</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>boolean</code> value
-     * from
+     * @param obj   the object to extract the <code>boolean</code> value
+     *              from
      * @return the value of the <code>boolean</code> field
      */
     public static boolean getBoolean(Field field, Object obj) {
@@ -804,8 +808,8 @@ public class BTraceUtils {
      * Gets the value of an instance <code>char</code> field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the <code>char</code> value
-     * from
+     * @param obj   the object to extract the <code>char</code> value
+     *              from
      * @return the value of the <code>char</code> field
      */
     public static char getChar(Field field, Object obj) {
@@ -826,8 +830,8 @@ public class BTraceUtils {
      * Gets the value of an instance reference field.
      *
      * @param field Field object whose value is returned.
-     * @param obj the object to extract the reference value
-     * from
+     * @param obj   the object to extract the reference value
+     *              from
      * @return the value of the reference field
      */
     public static Object get(Field field, Object obj) {
@@ -862,8 +866,8 @@ public class BTraceUtils {
      * this method returns <code>null</code>.
      *
      * @param ref reference object whose referent is returned.
-     * @return	 The object to which the reference refers, or
-     *		 <code>null</code> if the reference object has been cleared.
+     * @return The object to which the reference refers, or
+     * <code>null</code> if the reference object has been cleared.
      */
     public static Object deref(Reference ref) {
         return References.deref(ref);
@@ -874,6 +878,7 @@ public class BTraceUtils {
     /**
      * Returns the Class object of the currently
      * probed (or traced) class.
+     *
      * @deprecated Since 1.1. Use {@linkplain ProbeClassName} and {@linkplain Self} annotations instead
      */
     @Deprecated
@@ -883,6 +888,7 @@ public class BTraceUtils {
 
     /**
      * Returns the currently probed method's name.
+     *
      * @deprecated Since 1.1. Use {@linkplain ProbeMethodName} annotation instead
      */
     @Deprecated
@@ -924,7 +930,7 @@ public class BTraceUtils {
      * @param name - the name of the map
      * @param data - the map data
      */
-    public static void printStringMap(String name, Map<String,String> data) {
+    public static void printStringMap(String name, Map<String, String> data) {
         BTraceRuntime.printStringMap(name, data);
     }
 
@@ -941,7 +947,7 @@ public class BTraceUtils {
     /**
      * Prints a number.
      *
-     * @param name - name of the number data
+     * @param name  - name of the number data
      * @param value - value of the numerical data
      */
     public static void printNumber(String name, Number value) {
@@ -979,9 +985,9 @@ public class BTraceUtils {
      * prints name of the declaring class before each field - so that
      * if same named field in super class chain may be disambiguated.
      *
-     * @param obj Object whose fields are printed.
+     * @param obj             Object whose fields are printed.
      * @param classNamePrefix flag to tell whether to prefix field names
-     *        names by class name or not.
+     *                        names by class name or not.
      */
     public static void printFields(Object obj, boolean classNamePrefix) {
         Reflective.printFields(obj, classNamePrefix);
@@ -1003,9 +1009,9 @@ public class BTraceUtils {
      * prints name of the declaring class before each field - so that
      * if same named field in super class chain may be disambiguated.
      *
-     * @param clazz Class whose static fields are printed.
+     * @param clazz           Class whose static fields are printed.
      * @param classNamePrefix flag to tell whether to prefix field names
-     *        names by class name or not.
+     *                        names by class name or not.
      */
     public static void printStaticFields(Class clazz, boolean classNamePrefix) {
         Reflective.printStaticFields(clazz, classNamePrefix);
@@ -1021,7 +1027,7 @@ public class BTraceUtils {
      * java.lang.String#valueOf(boolean)}</code> is sent to BTrace client
      * for "printing".
      *
-     * @param      b   The <code>boolean</code> to be printed
+     * @param b The <code>boolean</code> to be printed
      */
 
     public static void print(boolean b) {
@@ -1033,8 +1039,7 @@ public class BTraceUtils {
      * java.lang.Character#valueOf(char)}</code> is sent to BTrace client
      * for "printing".
      *
-     *
-     * @param      c   The <code>char</code> to be printed
+     * @param c The <code>char</code> to be printed
      */
     public static void print(char c) {
         print(Character.valueOf(c));
@@ -1044,8 +1049,8 @@ public class BTraceUtils {
      * Prints an integer.  The string produced by <code>{@link
      * java.lang.String#valueOf(int)}</code> is sent to BTrace client for "printing".
      *
-     * @param      i   The <code>int</code> to be printed
-     * @see        java.lang.Integer#toString(int)
+     * @param i The <code>int</code> to be printed
+     * @see java.lang.Integer#toString(int)
      */
 
     public static void print(int i) {
@@ -1057,8 +1062,8 @@ public class BTraceUtils {
      * Prints a long integer.  The string produced by <code>{@link
      * java.lang.String#valueOf(long)}</code> is sent to BTrace client for "printing".
      *
-     * @param      l   The <code>long</code> to be printed
-     * @see        java.lang.Long#toString(long)
+     * @param l The <code>long</code> to be printed
+     * @see java.lang.Long#toString(long)
      */
     public static void print(long l) {
         print(Long.valueOf(l));
@@ -1068,8 +1073,8 @@ public class BTraceUtils {
      * Prints a floating-point number.  The string produced by <code>{@link
      * java.lang.String#valueOf(float)}</code> is sent to BTrace client for "printing".
      *
-     * @param      f   The <code>float</code> to be printed
-     * @see        java.lang.Float#toString(float)
+     * @param f The <code>float</code> to be printed
+     * @see java.lang.Float#toString(float)
      */
     public static void print(float f) {
         print(Float.valueOf(f));
@@ -1081,8 +1086,8 @@ public class BTraceUtils {
      * <code>{@link java.lang.String#valueOf(double)}</code> is sent to BTrace client
      * for "printing".
      *
-     * @param      d   The <code>double</code> to be printed
-     * @see        java.lang.Double#toString(double)
+     * @param d The <code>double</code> to be printed
+     * @see java.lang.Double#toString(double)
      */
     public static void print(double d) {
         print(Double.valueOf(d));
@@ -1100,7 +1105,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(boolean)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param b  The <code>boolean</code> to be printed
+     * @param b The <code>boolean</code> to be printed
      */
 
     public static void println(boolean b) {
@@ -1112,7 +1117,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(char)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param c  The <code>char</code> to be printed.
+     * @param c The <code>char</code> to be printed.
      */
     public static void println(char c) {
         println(Character.valueOf(c));
@@ -1123,7 +1128,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(int)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param i  The <code>int</code> to be printed.
+     * @param i The <code>int</code> to be printed.
      */
     public static void println(int i) {
         println(Integer.valueOf(i));
@@ -1134,7 +1139,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(long)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param l  a The <code>long</code> to be printed.
+     * @param l a The <code>long</code> to be printed.
      */
     public static void println(long l) {
         println(Long.valueOf(l));
@@ -1146,7 +1151,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(float)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param f  The <code>float</code> to be printed.
+     * @param f The <code>float</code> to be printed.
      */
     public static void println(float f) {
         println(Float.valueOf(f));
@@ -1158,7 +1163,7 @@ public class BTraceUtils {
      * though it invokes <code>{@link #print(double)}</code> and then
      * <code>{@link #println()}</code>.
      *
-     * @param d  The <code>double</code> to be printed.
+     * @param d The <code>double</code> to be printed.
      */
     public static void println(double d) {
         println(Double.valueOf(d));
@@ -1202,8 +1207,8 @@ public class BTraceUtils {
      * operating systems measure time in units of tens of
      * milliseconds.
      *
-     * @return  the difference, measured in milliseconds, between
-     *          the current time and midnight, January 1, 1970 UTC.
+     * @return the difference, measured in milliseconds, between
+     * the current time and midnight, January 1, 1970 UTC.
      */
     public static long timeMillis() {
         return Time.millis();
@@ -1212,7 +1217,7 @@ public class BTraceUtils {
     /**
      * Returns the current value of the most precise available system
      * timer, in nanoseconds.
-     *
+     * <p>
      * <p>This method can only be used to measure elapsed time and is
      * not related to any other notion of system or wall-clock time.
      * The value returned represents nanoseconds since some fixed but
@@ -1232,6 +1237,7 @@ public class BTraceUtils {
 
     /**
      * <p>Generates a string getTimestamp (current date&time)
+     *
      * @param format The format to be used - see {@linkplain SimpleDateFormat}
      * @return Returns a string representing current date&time
      * @since 1.1
@@ -1242,6 +1248,7 @@ public class BTraceUtils {
 
     /**
      * <p>Generates a string getTimestamp (current date&time) in the default system format
+     *
      * @return Returns a string representing current date&time
      * @since 1.1
      */
@@ -1339,9 +1346,10 @@ public class BTraceUtils {
     /**
      * Substring
      */
-    public static String substr(String str,  int start, int length) {
+    public static String substr(String str, int start, int length) {
         return Strings.substr(str, start, length);
     }
+
     public static String substr(String str, int start) {
         return Strings.substr(str, start);
     }
@@ -1352,8 +1360,8 @@ public class BTraceUtils {
      * code units</a> in the string.
      *
      * @param str String whose length is calculated.
-     * @return  the length of the sequence of characters represented by this
-     *          object.
+     * @return the length of the sequence of characters represented by this
+     * object.
      */
     public static int length(String str) {
         return Strings.length(str);
@@ -1373,11 +1381,8 @@ public class BTraceUtils {
     /**
      * Compiles the given regular expression into a pattern.  </p>
      *
-     * @param  regex
-     *         The expression to be compiled
-     *
-     * @throws  PatternSyntaxException
-     *          If the expression's syntax is invalid
+     * @param regex The expression to be compiled
+     * @throws PatternSyntaxException If the expression's syntax is invalid
      */
     public static Pattern regexp(String regex) {
         return Strings.regexp(regex);
@@ -1396,21 +1401,14 @@ public class BTraceUtils {
      * Compiles the given regular expression into a pattern with the given
      * flags.  </p>
      *
-     * @param  regex
-     *         The expression to be compiled
-     *
-     * @param  flags
-     *         Match flags, a bit mask that may include
-     *         {@link Pattern#CASE_INSENSITIVE}, {@link Pattern#MULTILINE}, {@link Pattern#DOTALL},
-     *         {@link Pattern#UNICODE_CASE}, {@link Pattern#CANON_EQ}, {@link Pattern#UNIX_LINES},
-     *         {@link Pattern#LITERAL} and {@link Pattern#COMMENTS}
-     *
-     * @throws  IllegalArgumentException
-     *          If bit values other than those corresponding to the defined
-     *          match flags are set in <tt>flags</tt>
-     *
-     * @throws  PatternSyntaxException
-     *          If the expression's syntax is invalid
+     * @param regex The expression to be compiled
+     * @param flags Match flags, a bit mask that may include
+     *              {@link Pattern#CASE_INSENSITIVE}, {@link Pattern#MULTILINE}, {@link Pattern#DOTALL},
+     *              {@link Pattern#UNICODE_CASE}, {@link Pattern#CANON_EQ}, {@link Pattern#UNIX_LINES},
+     *              {@link Pattern#LITERAL} and {@link Pattern#COMMENTS}
+     * @throws IllegalArgumentException If bit values other than those corresponding to the defined
+     *                                  match flags are set in <tt>flags</tt>
+     * @throws PatternSyntaxException   If the expression's syntax is invalid
      */
     public static Pattern regexp(String regex, int flags) {
         return Strings.regexp(regex, flags);
@@ -1436,28 +1434,23 @@ public class BTraceUtils {
     /**
      * Compiles the given regular expression and attempts to match the given
      * input against it.
-     *
+     * <p>
      * <p> An invocation of this convenience method of the form
-     *
+     * <p>
      * <blockquote><pre>
      * Pattern.matches(regex, input);</pre></blockquote>
-     *
+     * <p>
      * behaves in exactly the same way as the expression
-     *
+     * <p>
      * <blockquote><pre>
      * Pattern.compile(regex).matcher(input).matches()</pre></blockquote>
-     *
+     * <p>
      * <p> If a pattern is to be used multiple times, compiling it once and reusing
      * it will be more efficient than invoking this method each time.  </p>
      *
-     * @param  regex
-     *         The expression to be compiled
-     *
-     * @param  input
-     *         The character sequence to be matched
-     *
-     * @throws  PatternSyntaxException
-     *          If the expression's syntax is invalid
+     * @param regex The expression to be compiled
+     * @param input The character sequence to be matched
+     * @throws PatternSyntaxException If the expression's syntax is invalid
      */
     public static boolean matches(String regex, String input) {
         return Strings.matches(regex, input);
@@ -1484,13 +1477,13 @@ public class BTraceUtils {
      * positive infinity.
      * <li>If the argument is positive zero or negative zero, then the
      * result is negative infinity.</ul>
-     *
+     * <p>
      * <p>The computed result must be within 1 ulp of the exact result.
      * Results must be semi-monotonic.
      *
-     * @param   a   a value
-     * @return  the value ln&nbsp;<code>a</code>, the natural logarithm of
-     *          <code>a</code>.
+     * @param a a value
+     * @return the value ln&nbsp;<code>a</code>, the natural logarithm of
+     * <code>a</code>.
      */
     public strictfp static double log(double a) {
         return Numbers.log(a);
@@ -1499,7 +1492,7 @@ public class BTraceUtils {
     /**
      * Returns the base 10 logarithm of a <code>double</code> value.
      * Special cases:
-     *
+     * <p>
      * <ul><li>If the argument is NaN or less than zero, then the result
      * is NaN.
      * <li>If the argument is positive infinity, then the result is
@@ -1509,12 +1502,12 @@ public class BTraceUtils {
      * <li> If the argument is equal to 10<sup><i>n</i></sup> for
      * integer <i>n</i>, then the result is <i>n</i>.
      * </ul>
-     *
+     * <p>
      * <p>The computed result must be within 1 ulp of the exact result.
      * Results must be semi-monotonic.
      *
-     * @param   a   a value
-     * @return  the base 10 logarithm of  <code>a</code>.
+     * @param a a value
+     * @return the base 10 logarithm of  <code>a</code>.
      */
     public strictfp static double log10(double a) {
         return Numbers.log10(a);
@@ -1528,13 +1521,13 @@ public class BTraceUtils {
      * positive infinity.
      * <li>If the argument is negative infinity, then the result is
      * positive zero.</ul>
-     *
+     * <p>
      * <p>The computed result must be within 1 ulp of the exact result.
      * Results must be semi-monotonic.
      *
-     * @param   a   the exponent to raise <i>e</i> to.
-     * @return  the value <i>e</i><sup><code>a</code></sup>,
-     *          where <i>e</i> is the base of the natural logarithms.
+     * @param a the exponent to raise <i>e</i> to.
+     * @return the value <i>e</i><sup><code>a</code></sup>,
+     * where <i>e</i> is the base of the natural logarithms.
      */
     public strictfp static double exp(double a) {
         return Numbers.exp(a);
@@ -1544,9 +1537,9 @@ public class BTraceUtils {
      * Returns <code>true</code> if the specified number is a
      * Not-a-Number (NaN) value, <code>false</code> otherwise.
      *
-     * @param   d  the value to be tested.
-     * @return  <code>true</code> if the value of the argument is NaN;
-     *          <code>false</code> otherwise.
+     * @param d the value to be tested.
+     * @return <code>true</code> if the value of the argument is NaN;
+     * <code>false</code> otherwise.
      */
     public static boolean isNaN(double d) {
         return Numbers.isNaN(d);
@@ -1556,9 +1549,9 @@ public class BTraceUtils {
      * Returns <code>true</code> if the specified number is a
      * Not-a-Number (NaN) value, <code>false</code> otherwise.
      *
-     * @param   f the value to be tested.
-     * @return  <code>true</code> if the value of the argument is NaN;
-     *          <code>false</code> otherwise.
+     * @param f the value to be tested.
+     * @return <code>true</code> if the value of the argument is NaN;
+     * <code>false</code> otherwise.
      */
     public static boolean isNaN(float f) {
         return Numbers.isNaN(f);
@@ -1568,9 +1561,9 @@ public class BTraceUtils {
      * Returns <code>true</code> if the specified number is infinitely
      * large in magnitude, <code>false</code> otherwise.
      *
-     * @param   d the value to be tested.
-     * @return  <code>true</code> if the value of the argument is positive
-     *          infinity or negative infinity; <code>false</code> otherwise.
+     * @param d the value to be tested.
+     * @return <code>true</code> if the value of the argument is positive
+     * infinity or negative infinity; <code>false</code> otherwise.
      */
     public static boolean isInfinite(double d) {
         return Numbers.isInfinite(d);
@@ -1580,9 +1573,9 @@ public class BTraceUtils {
      * Returns <code>true</code> if the specified number is infinitely
      * large in magnitude, <code>false</code> otherwise.
      *
-     * @param   f the value to be tested.
-     * @return  <code>true</code> if the value of the argument is positive
-     *          infinity or negative infinity; <code>false</code> otherwise.
+     * @param f the value to be tested.
+     * @return <code>true</code> if the value of the argument is positive
+     * infinity or negative infinity; <code>false</code> otherwise.
      */
     public static boolean isInfinite(float f) {
         return Numbers.isInfinite(f);
@@ -1598,9 +1591,9 @@ public class BTraceUtils {
      * Example: {@code Boolean.parseBoolean("True")} returns <tt>true</tt>.<br>
      * Example: {@code Boolean.parseBoolean("yes")} returns <tt>false</tt>.
      *
-     * @param      s   the <code>String</code> containing the boolean
-     *                 representation to be parsed
-     * @return     the boolean represented by the string argument
+     * @param s the <code>String</code> containing the boolean
+     *          representation to be parsed
+     * @return the boolean represented by the string argument
      */
     public static boolean parseBoolean(String s) {
         return Numbers.parseBoolean(s);
@@ -1614,10 +1607,10 @@ public class BTraceUtils {
      * indicate a negative value. The resulting <code>byte</code> value is
      * returned.
      *
-     * @param s		a <code>String</code> containing the
-     *                  <code>byte</code> representation to be parsed
-     * @return 		the <code>byte</code> value represented by the
-     *                  argument in decimal
+     * @param s a <code>String</code> containing the
+     *          <code>byte</code> representation to be parsed
+     * @return the <code>byte</code> value represented by the
+     * argument in decimal
      */
     public static byte parseByte(String s) {
         return Numbers.parseByte(s);
@@ -1631,10 +1624,10 @@ public class BTraceUtils {
      * indicate a negative value. The resulting <code>short</code> value is
      * returned.
      *
-     * @param s		a <code>String</code> containing the <code>short</code>
-     *                  representation to be parsed
-     * @return          the <code>short</code> value represented by the
-     *                  argument in decimal.
+     * @param s a <code>String</code> containing the <code>short</code>
+     *          representation to be parsed
+     * @return the <code>short</code> value represented by the
+     * argument in decimal.
      */
     public static short parseShort(String s) {
         return Numbers.parseShort(s);
@@ -1647,9 +1640,9 @@ public class BTraceUtils {
      * (<code>'&#92;u002D'</code>) to indicate a negative value. The resulting
      * integer value is returned.
      *
-     * @param s	   a <code>String</code> containing the <code>int</code>
-     *             representation to be parsed
-     * @return     the integer value represented by the argument in decimal.
+     * @param s a <code>String</code> containing the <code>int</code>
+     *          representation to be parsed
+     * @return the integer value represented by the argument in decimal.
      */
     public static int parseInt(String s) {
         return Numbers.parseInt(s);
@@ -1669,10 +1662,10 @@ public class BTraceUtils {
      * of the string as a type indicator, as would be permitted in
      * Java programming language source code.
      *
-     * @param      s   a <code>String</code> containing the <code>long</code>
-     *             representation to be parsed
-     * @return     the <code>long</code> represented by the argument in
-     *		   decimal.
+     * @param s a <code>String</code> containing the <code>long</code>
+     *          representation to be parsed
+     * @return the <code>long</code> represented by the argument in
+     * decimal.
      */
     public static long parseLong(String s) {
         return Numbers.parseLong(s);
@@ -1683,9 +1676,9 @@ public class BTraceUtils {
      * represented by the specified <code>String</code>, as performed
      * by the <code>valueOf</code> method of class <code>Float</code>.
      *
-     * @param      s   the string to be parsed.
+     * @param s the string to be parsed.
      * @return the <code>float</code> value represented by the string
-     *         argument.
+     * argument.
      */
     public static float parseFloat(String s) {
         return Numbers.parseFloat(s);
@@ -1697,12 +1690,12 @@ public class BTraceUtils {
      * by the <code>valueOf</code> methcod of class
      * <code>Double</code>.
      *
-     * @param      s   the string to be parsed.
+     * @param s the string to be parsed.
      * @return the <code>double</code> value represented by the string
-     *         argument.
+     * argument.
      */
     public static double parseDouble(String s) {
-	return Numbers.parseDouble(s);
+        return Numbers.parseDouble(s);
     }
 
     // boxing methods
@@ -1713,7 +1706,7 @@ public class BTraceUtils {
      * is <tt>true</tt>, this method returns <tt>Boolean.TRUE</tt>;
      * if it is <tt>false</tt>, this method returns <tt>Boolean.FALSE</tt>.
      *
-     * @param  b a boolean value.
+     * @param b a boolean value.
      * @return a <tt>Boolean</tt> instance representing <tt>b</tt>.
      */
     public static Boolean box(boolean b) {
@@ -1724,7 +1717,7 @@ public class BTraceUtils {
      * Returns a <tt>Character</tt> instance representing the specified
      * <tt>char</tt> value.
      *
-     * @param  c a char value.
+     * @param c a char value.
      * @return a <tt>Character</tt> instance representing <tt>c</tt>.
      */
     public static Character box(char c) {
@@ -1735,7 +1728,7 @@ public class BTraceUtils {
      * Returns a <tt>Byte</tt> instance representing the specified
      * <tt>byte</tt> value.
      *
-     * @param  b a byte value.
+     * @param b a byte value.
      * @return a <tt>Byte</tt> instance representing <tt>b</tt>.
      */
     public static Byte box(byte b) {
@@ -1746,7 +1739,7 @@ public class BTraceUtils {
      * Returns a <tt>Short</tt> instance representing the specified
      * <tt>short</tt> value.
      *
-     * @param  s a short value.
+     * @param s a short value.
      * @return a <tt>Short</tt> instance representing <tt>s</tt>.
      */
     public static Short box(short s) {
@@ -1757,7 +1750,7 @@ public class BTraceUtils {
      * Returns a <tt>Integer</tt> instance representing the specified
      * <tt>int</tt> value.
      *
-     * @param  i an <code>int</code> value.
+     * @param i an <code>int</code> value.
      * @return a <tt>Integer</tt> instance representing <tt>i</tt>.
      */
     public static Integer box(int i) {
@@ -1768,7 +1761,7 @@ public class BTraceUtils {
      * Returns a <tt>Long</tt> instance representing the specified
      * <tt>long</tt> value.
      *
-     * @param  l a long value.
+     * @param l a long value.
      * @return a <tt>Long</tt> instance representing <tt>l</tt>.
      */
     public static Long box(long l) {
@@ -1779,7 +1772,7 @@ public class BTraceUtils {
      * Returns a <tt>Float</tt> instance representing the specified
      * <tt>float</tt> value.
      *
-     * @param  f a float value.
+     * @param f a float value.
      * @return a <tt>Float</tt> instance representing <tt>f</tt>.
      */
     public static Float box(float f) {
@@ -1790,7 +1783,7 @@ public class BTraceUtils {
      * Returns a <tt>Double</tt> instance representing the specified
      * <tt>double</tt> value.
      *
-     * @param  d a double value.
+     * @param d a double value.
      * @return a <tt>Double</tt> instance representing <tt>d</tt>.
      */
     public static Double box(double d) {
@@ -1804,7 +1797,7 @@ public class BTraceUtils {
      * primitive.
      *
      * @param b the Boolean object whose value is returned.
-     * @return  the primitive <code>boolean</code> value of the object.
+     * @return the primitive <code>boolean</code> value of the object.
      */
     public static boolean unbox(Boolean b) {
         return Numbers.unbox(b);
@@ -1815,7 +1808,7 @@ public class BTraceUtils {
      * primitive.
      *
      * @param ch the Character object whose value is returned.
-     * @return  the primitive <code>char</code> value of the object.
+     * @return the primitive <code>char</code> value of the object.
      */
     public static char unbox(Character ch) {
         return Numbers.unbox(ch);
@@ -1825,7 +1818,7 @@ public class BTraceUtils {
      * Returns the value of the specified Byte as a <code>byte</code>.
      *
      * @param b Byte that is unboxed
-     * @return  the byte value represented by the <code>Byte</code>.
+     * @return the byte value represented by the <code>Byte</code>.
      */
     public static byte unbox(Byte b) {
         return Numbers.unbox(b);
@@ -1835,7 +1828,7 @@ public class BTraceUtils {
      * Returns the short value represented by <code>Short</code>.
      *
      * @param s Short that is unboxed.
-     * @return  the short value represented by the <code>Short</code>.
+     * @return the short value represented by the <code>Short</code>.
      */
     public static short unbox(Short s) {
         return Numbers.unbox(s);
@@ -1845,7 +1838,7 @@ public class BTraceUtils {
      * Returns the value of represented by <code>Integer</code>.
      *
      * @param i Integer that is unboxed.
-     * @return  the int value represented by the <code>Integer</code>.
+     * @return the int value represented by the <code>Integer</code>.
      */
     public static int unbox(Integer i) {
         return Numbers.unbox(i);
@@ -1855,7 +1848,7 @@ public class BTraceUtils {
      * Returns the long value represented by the specified <code>Long</code>.
      *
      * @param l Long to be unboxed.
-     * @return  the long value represented by the <code>Long</code>.
+     * @return the long value represented by the <code>Long</code>.
      */
     public static long unbox(Long l) {
         return Numbers.unbox(l);
@@ -1865,7 +1858,7 @@ public class BTraceUtils {
      * Returns the float value represented by the specified <code>Float</code>.
      *
      * @param f Float to be unboxed.
-     * @return  the float value represented by the <code>Float</code>.
+     * @return the float value represented by the <code>Float</code>.
      */
     public static float unbox(Float f) {
         return Numbers.unbox(f);
@@ -1888,7 +1881,7 @@ public class BTraceUtils {
      * the string {@code "true"} will be returned, otherwise the
      * string {@code "false"} will be returned.
      *
-     * @param b	the boolean to be converted
+     * @param b the boolean to be converted
      * @return the string representation of the specified <code>boolean</code>
      */
     public static String str(boolean b) {
@@ -1912,8 +1905,8 @@ public class BTraceUtils {
      * specified integer. The argument is converted to signed decimal
      * representation and returned as a string.
      *
-     * @param   i   an integer to be converted.
-     * @return  a string representation of the argument in base&nbsp;10.
+     * @param i an integer to be converted.
+     * @return a string representation of the argument in base&nbsp;10.
      */
     public static String str(int i) {
         return Strings.str(i);
@@ -1940,9 +1933,9 @@ public class BTraceUtils {
      * <code>'&#92;u0039'</code> and <code>'&#92;u0061'</code> through
      * <code>'&#92;u0066'</code>.
      *
-     * @param   i   an integer to be converted to a string.
-     * @return  the string representation of the unsigned integer value
-     *          represented by the argument in hexadecimal (base&nbsp;16).
+     * @param i an integer to be converted to a string.
+     * @return the string representation of the unsigned integer value
+     * represented by the argument in hexadecimal (base&nbsp;16).
      */
     public static String toHexString(int i) {
         return Strings.toHexString(i);
@@ -1953,8 +1946,8 @@ public class BTraceUtils {
      * <code>long</code>.  The argument is converted to signed decimal
      * representation and returned as a string.
      *
-     * @param   l a <code>long</code> to be converted.
-     * @return  a string representation of the argument in base&nbsp;10.
+     * @param l a <code>long</code> to be converted.
+     * @return a string representation of the argument in base&nbsp;10.
      */
     public static String str(long l) {
         return Strings.str(l);
@@ -1981,10 +1974,10 @@ public class BTraceUtils {
      * <code>'&#92;u0039'</code> and  <code>'&#92;u0061'</code> through
      * <code>'&#92;u0066'</code>.
      *
-     * @param   l a <code>long</code> to be converted to a string.
-     * @return  the string representation of the unsigned <code>long</code>
-     * 		value represented by the argument in hexadecimal
-     *		(base&nbsp;16).
+     * @param l a <code>long</code> to be converted to a string.
+     * @return the string representation of the unsigned <code>long</code>
+     * value represented by the argument in hexadecimal
+     * (base&nbsp;16).
      */
     public static String toHexString(long l) {
         return Strings.toHexString(l);
@@ -1997,43 +1990,43 @@ public class BTraceUtils {
      * <li>If the argument is NaN, the result is the string
      * &quot;<code>NaN</code>&quot;.
      * <li>Otherwise, the result is a string that represents the sign and
-     *     magnitude (absolute value) of the argument. If the sign is
-     *     negative, the first character of the result is
-     *     '<code>-</code>' (<code>'&#92;u002D'</code>); if the sign is
-     *     positive, no sign character appears in the result. As for
-     *     the magnitude <i>m</i>:
+     * magnitude (absolute value) of the argument. If the sign is
+     * negative, the first character of the result is
+     * '<code>-</code>' (<code>'&#92;u002D'</code>); if the sign is
+     * positive, no sign character appears in the result. As for
+     * the magnitude <i>m</i>:
      * <ul>
      * <li>If <i>m</i> is infinity, it is represented by the characters
-     *     <code>"Infinity"</code>; thus, positive infinity produces
-     *     the result <code>"Infinity"</code> and negative infinity
-     *     produces the result <code>"-Infinity"</code>.
+     * <code>"Infinity"</code>; thus, positive infinity produces
+     * the result <code>"Infinity"</code> and negative infinity
+     * produces the result <code>"-Infinity"</code>.
      * <li>If <i>m</i> is zero, it is represented by the characters
-     *     <code>"0.0"</code>; thus, negative zero produces the result
-     *     <code>"-0.0"</code> and positive zero produces the result
-     *     <code>"0.0"</code>.
+     * <code>"0.0"</code>; thus, negative zero produces the result
+     * <code>"-0.0"</code> and positive zero produces the result
+     * <code>"0.0"</code>.
      * <li> If <i>m</i> is greater than or equal to 10<sup>-3</sup> but
-     *      less than 10<sup>7</sup>, then it is represented as the
-     *      integer part of <i>m</i>, in decimal form with no leading
-     *      zeroes, followed by '<code>.</code>'
-     *      (<code>'&#92;u002E'</code>), followed by one or more
-     *      decimal digits representing the fractional part of
-     *      <i>m</i>.
+     * less than 10<sup>7</sup>, then it is represented as the
+     * integer part of <i>m</i>, in decimal form with no leading
+     * zeroes, followed by '<code>.</code>'
+     * (<code>'&#92;u002E'</code>), followed by one or more
+     * decimal digits representing the fractional part of
+     * <i>m</i>.
      * <li> If <i>m</i> is less than 10<sup>-3</sup> or greater than or
-     *      equal to 10<sup>7</sup>, then it is represented in
-     *      so-called "computerized scientific notation." Let <i>n</i>
-     *      be the unique integer such that 10<sup><i>n</i> </sup>&lt;=
-     *      <i>m</i> &lt; 10<sup><i>n</i>+1</sup>; then let <i>a</i>
-     *      be the mathematically exact quotient of <i>m</i> and
-     *      10<sup><i>n</i></sup> so that 1 &lt;= <i>a</i> &lt; 10.
-     *      The magnitude is then represented as the integer part of
-     *      <i>a</i>, as a single decimal digit, followed by
-     *      '<code>.</code>' (<code>'&#92;u002E'</code>), followed by
-     *      decimal digits representing the fractional part of
-     *      <i>a</i>, followed by the letter '<code>E</code>'
-     *      (<code>'&#92;u0045'</code>), followed by a representation
-     *      of <i>n</i> as a decimal integer, as produced by the
-     *      method <code>{@link
-     *      java.lang.Integer#toString(int)}</code>.
+     * equal to 10<sup>7</sup>, then it is represented in
+     * so-called "computerized scientific notation." Let <i>n</i>
+     * be the unique integer such that 10<sup><i>n</i> </sup>&lt;=
+     * <i>m</i> &lt; 10<sup><i>n</i>+1</sup>; then let <i>a</i>
+     * be the mathematically exact quotient of <i>m</i> and
+     * 10<sup><i>n</i></sup> so that 1 &lt;= <i>a</i> &lt; 10.
+     * The magnitude is then represented as the integer part of
+     * <i>a</i>, as a single decimal digit, followed by
+     * '<code>.</code>' (<code>'&#92;u002E'</code>), followed by
+     * decimal digits representing the fractional part of
+     * <i>a</i>, followed by the letter '<code>E</code>'
+     * (<code>'&#92;u0045'</code>), followed by a representation
+     * of <i>n</i> as a decimal integer, as produced by the
+     * method <code>{@link
+     * java.lang.Integer#toString(int)}</code>.
      * </ul>
      * </ul>
      * How many digits must be printed for the fractional part of
@@ -2051,7 +2044,7 @@ public class BTraceUtils {
      * <i>f</i> must be <code>0</code>.
      * <p>
      *
-     * @param   f   the float to be converted.
+     * @param f the float to be converted.
      * @return a string representation of the argument.
      */
     public static String str(float f) {
@@ -2063,7 +2056,7 @@ public class BTraceUtils {
      * argument. All characters mentioned below are ASCII characters.
      * <ul>
      * <li>If the argument is NaN, the result is the string
-     *     &quot;<code>NaN</code>&quot;.
+     * &quot;<code>NaN</code>&quot;.
      * <li>Otherwise, the result is a string that represents the sign and
      * magnitude (absolute value) of the argument. If the sign is negative,
      * the first character of the result is '<code>-</code>'
@@ -2074,18 +2067,18 @@ public class BTraceUtils {
      * <code>"Infinity"</code>; thus, positive infinity produces the result
      * <code>"Infinity"</code> and negative infinity produces the result
      * <code>"-Infinity"</code>.
-     *
+     * <p>
      * <li>If <i>m</i> is zero, it is represented by the characters
      * <code>"0.0"</code>; thus, negative zero produces the result
      * <code>"-0.0"</code> and positive zero produces the result
      * <code>"0.0"</code>.
-     *
+     * <p>
      * <li>If <i>m</i> is greater than or equal to 10<sup>-3</sup> but less
      * than 10<sup>7</sup>, then it is represented as the integer part of
      * <i>m</i>, in decimal form with no leading zeroes, followed by
      * '<code>.</code>' (<code>'&#92;u002E'</code>), followed by one or
      * more decimal digits representing the fractional part of <i>m</i>.
-     *
+     * <p>
      * <li>If <i>m</i> is less than 10<sup>-3</sup> or greater than or
      * equal to 10<sup>7</sup>, then it is represented in so-called
      * "computerized scientific notation." Let <i>n</i> be the unique
@@ -2115,7 +2108,7 @@ public class BTraceUtils {
      * significant bit of the significand of <i>d</i> must be <code>0</code>.
      * <p>
      *
-     * @param   d   the <code>double</code> to be converted.
+     * @param d the <code>double</code> to be converted.
      * @return a string representation of the argument.
      */
     public static String str(double d) {
@@ -2221,7 +2214,7 @@ public class BTraceUtils {
 
     // operations on collections
     public static <E> int size(Collection<E> coll) {
-       return Collections.size(coll);
+        return Collections.size(coll);
     }
 
     public static <E> boolean isEmpty(Collection<E> coll) {
@@ -2250,49 +2243,49 @@ public class BTraceUtils {
     }
 
     public static <V> void addLast(Deque<V> queue, V value) {
-    	Collections.addLast(queue, value);
+        Collections.addLast(queue, value);
     }
 
     public static <V> V peekFirst(Deque<V> queue) {
-    	return Collections.peekFirst(queue);
+        return Collections.peekFirst(queue);
     }
 
     public static <V> V peekLast(Deque<V> queue) {
-    	return Collections.peekLast(queue);
+        return Collections.peekLast(queue);
     }
 
     public static <V> V removeLast(Deque<V> queue) {
-    	return Collections.removeLast(queue);
+        return Collections.removeLast(queue);
     }
 
     public static <V> V removeFirst(Deque<V> queue) {
-    	return Collections.removeFirst(queue);
-    }
-
-    /**
-     * Sets the current instrumentation level.
-     * <p>Instrumentation level is used in evaluating {@linkplain OnMethod#enableAt()}
-     * expressions to enable/disable the probe handler.</p>
-     * @param level an arbitrary non negative integer number
-     *
-     * @since 1.3.4
-     */
-    public static void setInstrumentationLevel(int level) {
-        if (level >= 0) {
-            BTraceRuntime.setInstrumentationLevel(level);
-        }
+        return Collections.removeFirst(queue);
     }
 
     /**
      * Returns the current instrumentation level.
      * <p>Instrumentation level is used in evaluating {@linkplain OnMethod#enableAt()}
      * expressions to enable/disable the probe handler.</p>
-     * @return the instrumentation level (non negative integer)
      *
+     * @return the instrumentation level (non negative integer)
      * @since 1.3.4
      */
     public static int getInstrumentationLevel() {
         return BTraceRuntime.getInstrumentationLevel();
+    }
+
+    /**
+     * Sets the current instrumentation level.
+     * <p>Instrumentation level is used in evaluating {@linkplain OnMethod#enableAt()}
+     * expressions to enable/disable the probe handler.</p>
+     *
+     * @param level an arbitrary non negative integer number
+     * @since 1.3.4
+     */
+    public static void setInstrumentationLevel(int level) {
+        if (level >= 0) {
+            BTraceRuntime.setInstrumentationLevel(level);
+        }
     }
 
     /**
@@ -2344,7 +2337,7 @@ public class BTraceUtils {
     /**
      * Sets to the given value to the given AtomicInteger.
      *
-     * @param ai AtomicInteger whose value is set.
+     * @param ai       AtomicInteger whose value is set.
      * @param newValue the new value
      */
     public static void set(AtomicInteger ai, int newValue) {
@@ -2354,7 +2347,7 @@ public class BTraceUtils {
     /**
      * Eventually sets to the given value to the given AtomicInteger.
      *
-     * @param ai AtomicInteger whose value is lazily set.
+     * @param ai       AtomicInteger whose value is lazily set.
      * @param newValue the new value
      */
     public static void lazySet(AtomicInteger ai, int newValue) {
@@ -2365,7 +2358,7 @@ public class BTraceUtils {
      * Atomically sets the value of given AtomitInteger to the given
      * updated value if the current value {@code ==} the expected value.
      *
-     * @param ai AtomicInteger whose value is compared and set.
+     * @param ai     AtomicInteger whose value is compared and set.
      * @param expect the expected value
      * @param update the new value
      * @return true if successful. False return indicates that
@@ -2378,12 +2371,12 @@ public class BTraceUtils {
     /**
      * Atomically sets the value to the given updated value
      * if the current value {@code ==} the expected value.
-     *
+     * <p>
      * <p>May <a href="package-summary.html#Spurious">fail spuriously</a>
      * and does not provide ordering guarantees, so is only rarely an
      * appropriate alternative to {@code compareAndSet}.
      *
-     * @param ai AtomicInteger whose value is weakly compared and set.
+     * @param ai     AtomicInteger whose value is weakly compared and set.
      * @param expect the expected value
      * @param update the new value
      * @return true if successful.
@@ -2438,7 +2431,7 @@ public class BTraceUtils {
     /**
      * Atomically adds the given value to the current value.
      *
-     * @param ai AtomicInteger whose value is added to.
+     * @param ai    AtomicInteger whose value is added to.
      * @param delta the value to add
      * @return the previous value
      */
@@ -2449,7 +2442,7 @@ public class BTraceUtils {
     /**
      * Atomically adds the given value to the current value.
      *
-     * @param ai AtomicInteger whose value is added to.
+     * @param ai    AtomicInteger whose value is added to.
      * @param delta the value to add
      * @return the updated value
      */
@@ -2460,7 +2453,7 @@ public class BTraceUtils {
     /**
      * Atomically sets to the given value and returns the old value.
      *
-     * @param ai AtomicInteger whose value is set.
+     * @param ai       AtomicInteger whose value is set.
      * @param newValue the new value
      * @return the previous value
      */
@@ -2492,7 +2485,7 @@ public class BTraceUtils {
     /**
      * Sets to the given value.
      *
-     * @param al AtomicLong whose value is set.
+     * @param al       AtomicLong whose value is set.
      * @param newValue the new value
      */
     public static void set(AtomicLong al, long newValue) {
@@ -2502,7 +2495,7 @@ public class BTraceUtils {
     /**
      * Eventually sets to the given value to the given AtomicLong.
      *
-     * @param al AtomicLong whose value is set.
+     * @param al       AtomicLong whose value is set.
      * @param newValue the new value
      */
     public static void lazySet(AtomicLong al, long newValue) {
@@ -2513,7 +2506,7 @@ public class BTraceUtils {
      * Atomically sets the value to the given updated value
      * if the current value {@code ==} the expected value.
      *
-     * @param al AtomicLong whose value is compared and set.
+     * @param al     AtomicLong whose value is compared and set.
      * @param expect the expected value
      * @param update the new value
      * @return true if successful. False return indicates that
@@ -2526,12 +2519,12 @@ public class BTraceUtils {
     /**
      * Atomically sets the value to the given updated value
      * if the current value {@code ==} the expected value.
-     *
+     * <p>
      * <p>May fail spuriously
      * and does not provide ordering guarantees, so is only rarely an
      * appropriate alternative to {@code compareAndSet}.
      *
-     * @param al AtomicLong whose value is compared and set.
+     * @param al     AtomicLong whose value is compared and set.
      * @param expect the expected value
      * @param update the new value
      * @return true if successful.
@@ -2584,7 +2577,7 @@ public class BTraceUtils {
     /**
      * Atomically adds the given value to the current value.
      *
-     * @param al AtomicLong whose value is added to.
+     * @param al    AtomicLong whose value is added to.
      * @param delta the value to add
      * @return the previous value
      */
@@ -2595,7 +2588,7 @@ public class BTraceUtils {
     /**
      * Atomically adds the given value to the current value.
      *
-     * @param al AtomicLong whose value is added to
+     * @param al    AtomicLong whose value is added to
      * @param delta the value to add
      * @return the updated value
      */
@@ -2606,7 +2599,7 @@ public class BTraceUtils {
     /**
      * Atomically sets to the given value and returns the old value.
      *
-     * @param al AtomicLong that is set.
+     * @param al       AtomicLong that is set.
      * @param newValue the new value
      * @return the previous value
      */
@@ -2618,7 +2611,7 @@ public class BTraceUtils {
      * BTrace to DTrace communication chennal.
      * Raise DTrace USDT probe from BTrace.
      *
-     * @see #dtraceProbe(String,String,int,int)
+     * @see #dtraceProbe(String, String, int, int)
      */
     public static int dtraceProbe(String str1, String str2) {
         return D.probe(str1, str2);
@@ -2628,7 +2621,7 @@ public class BTraceUtils {
      * BTrace to DTrace communication chennal.
      * Raise DTrace USDT probe from BTrace.
      *
-     * @see #dtraceProbe(String,String,int,int)
+     * @see #dtraceProbe(String, String, int, int)
      */
     public static int dtraceProbe(String str1, String str2, int i1) {
         return D.probe(str1, str2, i1);
@@ -2640,8 +2633,8 @@ public class BTraceUtils {
      *
      * @param str1 first String param to DTrace probe
      * @param str2 second String param to DTrace probe
-     * @param i1 first int param to DTrace probe
-     * @param i2 second int param to DTrace probe
+     * @param i1   first int param to DTrace probe
+     * @param i2   second int param to DTrace probe
      */
     public static int dtraceProbe(String str1, String str2, int i1, int i2) {
         return D.probe(str1, str2, i1, i2);
@@ -2650,13 +2643,12 @@ public class BTraceUtils {
     /**
      * Gets the system property indicated by the specified key.
      *
-     * @param      key   the name of the system property.
-     * @return     the string value of the system property,
-     *             or <code>null</code> if there is no property with that key.
-     *
-     * @exception  NullPointerException if <code>key</code> is
-     *             <code>null</code>.
-     * @exception  IllegalArgumentException if <code>key</code> is empty.
+     * @param key the name of the system property.
+     * @return the string value of the system property,
+     * or <code>null</code> if there is no property with that key.
+     * @throws NullPointerException     if <code>key</code> is
+     *                                  <code>null</code>.
+     * @throws IllegalArgumentException if <code>key</code> is empty.
      */
     public static String property(String key) {
         return Sys.Env.property(key);
@@ -2683,9 +2675,9 @@ public class BTraceUtils {
      * environment variable is a system-dependent external named
      * value.
      *
-     * @param  name the name of the environment variable
+     * @param name the name of the environment variable
      * @return the string value of the variable, or <code>null</code>
-     *         if the variable is not defined in the system environment
+     * if the variable is not defined in the system environment
      * @throws NullPointerException if <code>name</code> is <code>null</code>
      */
     public static String getenv(String name) {
@@ -2712,28 +2704,29 @@ public class BTraceUtils {
 
     /**
      * Returns the number of processors available to the Java virtual machine.
-     *
+     * <p>
      * <p> This value may change during a particular invocation of the virtual
      * machine.  Applications that are sensitive to the number of available
      * processors should therefore occasionally poll this property and adjust
      * their resource usage appropriately. </p>
      *
-     * @return  the maximum number of processors available to the virtual
-     *          machine; never smaller than one
+     * @return the maximum number of processors available to the virtual
+     * machine; never smaller than one
      */
     public static long availableProcessors() {
         return Sys.Env.availableProcessors();
     }
 
     // memory usage
+
     /**
      * Returns the amount of free memory in the Java Virtual Machine.
      * Calling the
      * <code>gc</code> method may result in increasing the value returned
      * by <code>freeMemory.</code>
      *
-     * @return  an approximation to the total amount of memory currently
-     *          available for future allocated objects, measured in bytes.
+     * @return an approximation to the total amount of memory currently
+     * available for future allocated objects, measured in bytes.
      */
     public static long freeMemory() {
         return Sys.Memory.freeMemory();
@@ -2747,8 +2740,8 @@ public class BTraceUtils {
      * Note that the amount of memory required to hold an object of any
      * given type may be implementation-dependent.
      *
-     * @return  the total amount of memory currently available for current
-     *          and future objects, measured in bytes.
+     * @return the total amount of memory currently available for current
+     * and future objects, measured in bytes.
      */
     public static long totalMemory() {
         return Sys.Memory.totalMemory();
@@ -2759,8 +2752,8 @@ public class BTraceUtils {
      * attempt to use.  If there is no inherent limit then the value {@link
      * java.lang.Long#MAX_VALUE} will be returned. </p>
      *
-     * @return  the maximum amount of memory that the virtual machine will
-     *          attempt to use, measured in bytes
+     * @return the maximum amount of memory that the virtual machine will
+     * attempt to use, measured in bytes
      */
     public static long maxMemory() {
         return Sys.Memory.maxMemory();
@@ -2879,11 +2872,11 @@ public class BTraceUtils {
     /**
      * Returns the boot class path that is used by the bootstrap class loader
      * to search for class files.
-     *
+     * <p>
      * <p> Multiple paths in the boot class path are separated by the
      * path separator character of the platform on which the Java
      * virtual machine is running.
-     *
+     * <p>
      * <p>A Java virtual machine implementation may not support
      * the boot class path mechanism for the bootstrap class loader
      * to search for class files.
@@ -2891,8 +2884,7 @@ public class BTraceUtils {
      * to determine if the Java virtual machine supports this method.
      *
      * @return the boot class path.
-     * @throws java.lang.UnsupportedOperationException
-     *     if the Java virtual machine does not support this operation.
+     * @throws java.lang.UnsupportedOperationException if the Java virtual machine does not support this operation.
      */
     public static String bootClassPath() {
         return Sys.VM.bootClassPath();
@@ -2912,7 +2904,7 @@ public class BTraceUtils {
     /**
      * Returns the Java library path.
      * This method is equivalent to <b>Sys.getProperty("java.library.path")</b>.
-     *
+     * <p>
      * <p> Multiple paths in the Java library path are separated by the
      * path separator character of the platform of the Java virtual machine
      * being monitored.
@@ -2988,25 +2980,45 @@ public class BTraceUtils {
     /**
      * Returns the total amount of time spent in GarbageCollection up to this point
      * since the application was started.
+     *
      * @return Returns the amount of overall time spent in GC
      */
     public static long getTotalGcTime() {
-    	return Sys.Memory.getTotalGcTime();
+        return Sys.Memory.getTotalGcTime();
     }
 
     /**
      * Returns an implementation-specific approximation of the amount of storage consumed by
      * the specified object. The result may include some or all of the object's overhead,
      * and thus is useful for comparison within an implementation but not between implementations.
-     *
+     * <p>
      * The estimate may change during a single invocation of the JVM.
      *
-     * @param objectToSize     the object to size
+     * @param objectToSize the object to size
      * @return an implementation-specific approximation of the amount of storage consumed by the specified object
      * @throws java.lang.NullPointerException if the supplied Object is <code>null</code>.
      */
     public static long sizeof(Object objectToSize) {
         return BTraceRuntime.sizeof(objectToSize);
+    }
+
+
+    /**
+     * Measures the memory footprint, in bytes, of an object graph. The object
+     * graph is defined by a root object and whatever object can be reached
+     * through that, excluding static fields, {@code Class} objects, and
+     * fields defined in {@code enum}s (all these are considered shared values,
+     * which should not contribute to the cost of any single object graph).
+     * <p>
+     * <p>Equivalent to {@code measureBytes(rootObject,
+     * Predicates.alwaysTrue())}.
+     *
+     * @param rootObject the root object that defines the object graph to be
+     *                   measured
+     * @return the memory footprint, in bytes, of the object graph
+     */
+    public static long measureBytes(Object rootObject) {
+        return MemoryMeasurer.measureBytes(rootObject);
     }
 
     /**
@@ -3030,8 +3042,8 @@ public class BTraceUtils {
      * fileName is created.
      *
      * @param fileName name of the file to which heap is dumped
-     * @param live flag that tells whether only live objects are
-     *             to be dumped or all objects are to be dumped.
+     * @param live     flag that tells whether only live objects are
+     *                 to be dumped or all objects are to be dumped.
      */
     public static void dumpHeap(String fileName, boolean live) {
         Sys.Memory.dumpHeap(fileName, live);
@@ -3074,7 +3086,7 @@ public class BTraceUtils {
      * directory is created. Under that directory, a file of given
      * fileName is created.
      *
-     * @param obj object that has to be serialized.
+     * @param obj      object that has to be serialized.
      * @param fileName name of the file to which the object is serialized.
      */
     public static void serialize(Serializable obj, String fileName) {
@@ -3107,6 +3119,7 @@ public class BTraceUtils {
      * Under the current dir of traced app, ./btrace&lt;pid>/&lt;btrace-class>/
      * directory is created. Under that directory, a file of the given
      * fileName is created.
+     *
      * @since 1.1
      */
     public static void writeDOT(Object obj, String fileName) {
@@ -3114,6 +3127,7 @@ public class BTraceUtils {
     }
 
     // speculative buffer management
+
     /**
      * Returns an identifier for a new speculative buffer.
      *
@@ -3151,6 +3165,7 @@ public class BTraceUtils {
     }
 
     // aggregation support
+
     /**
      * Creates a new aggregation based on the given aggregation function type.
      *
@@ -3218,7 +3233,7 @@ public class BTraceUtils {
      * aggregated value for each unique aggregation key.
      *
      * @param aggregation the aggregation to which the value should be added
-     * @param key the grouping aggregation key
+     * @param key         the grouping aggregation key
      */
     public static void addToAggregation(Aggregation aggregation, AggregationKey key, long value) {
         Aggregations.addToAggregation(aggregation, key, value);
@@ -3237,15 +3252,15 @@ public class BTraceUtils {
     /**
      * Removes all aggregated values from the aggregation except for the largest or smallest
      * <code>abs(count)</code> elements.
-     *
+     * <p>
      * <p>If <code>count</code> is positive, the largest aggregated values in the aggregation will be
      * preserved. If <code>count</code> is negative the smallest values will be preserved. If <code>count</code>
      * is zero then all elements will be removed.
-     *
+     * <p>
      * <p>Behavior is intended to be similar to the dtrace <code>trunc()</code> function.
      *
      * @param aggregation the aggregation to be truncated
-     * @param count the number of elements to preserve. If negative, the smallest <code>abs(count)</code> elements are preserved.
+     * @param count       the number of elements to preserve. If negative, the smallest <code>abs(count)</code> elements are preserved.
      */
     public static void truncateAggregation(Aggregation aggregation, int count) {
         Aggregations.truncateAggregation(aggregation, count);
@@ -3255,20 +3270,126 @@ public class BTraceUtils {
      * Prints the aggregation.
      */
     public static void printAggregation(String name, Aggregation aggregation) {
-    	Aggregations.printAggregation(name, aggregation);
+        Aggregations.printAggregation(name, aggregation);
     }
 
     /**
      * Prints aggregation using the provided format
-     * @param name The name of the aggregation to be used in the textual output
+     *
+     * @param name        The name of the aggregation to be used in the textual output
      * @param aggregation The aggregation to print
-     * @param format The format to use. It mimics {@linkplain String#format(java.lang.String, java.lang.Object[]) } behaviour
-     *               with the addition of the ability to address the key title as a 0-indexed item
+     * @param format      The format to use. It mimics {@linkplain String#format(java.lang.String, java.lang.Object[]) } behaviour
+     *                    with the addition of the ability to address the key title as a 0-indexed item
      * @see String#format(java.lang.String, java.lang.Object[])
      * @since 1.1
      */
     public static void printAggregation(String name, Aggregation aggregation, String format) {
-    	Aggregations.printAggregation(name, aggregation, format);
+        Aggregations.printAggregation(name, aggregation, format);
+    }
+
+    // Internals only below this point
+    private static void checkStatic(Field field) {
+        if (!Modifier.isStatic(field.getModifiers())) {
+            throw new IllegalArgumentException(field.getName() +
+                    " is not a static field");
+        }
+    }
+
+    private static Field getField(final Class clazz, final String name,
+                                  final boolean throwError) {
+        return AccessController.doPrivileged(new PrivilegedAction<Field>() {
+            @Override
+            public Field run() {
+                try {
+                    Field field = clazz.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (Exception exp) {
+                    if (throwError) {
+                        throw translate(exp);
+                    } else {
+                        return null;
+                    }
+                }
+            }
+        });
+    }
+
+    private static Field[] getAllFields(final Class clazz) {
+        return AccessController.doPrivileged(new PrivilegedAction<Field[]>() {
+            @Override
+            public Field[] run() {
+                try {
+                    Field[] fields = clazz.getDeclaredFields();
+                    for (Field f : fields) {
+                        f.setAccessible(true);
+                    }
+                    return fields;
+                } catch (Exception exp) {
+                    throw translate(exp);
+                }
+            }
+        });
+    }
+
+    private static void addFieldValues(StringBuilder buf, Object obj,
+                                       Class clazz, boolean classNamePrefix) {
+        Field[] fields = getAllFields(clazz);
+        for (Field f : fields) {
+            int modifiers = f.getModifiers();
+            if (!Modifier.isStatic(modifiers)) {
+                if (classNamePrefix) {
+                    buf.append(f.getDeclaringClass().getName());
+                    buf.append('.');
+                }
+                buf.append(f.getName());
+                buf.append('=');
+                try {
+                    buf.append(Strings.str(f.get(obj)));
+                } catch (Exception exp) {
+                    throw translate(exp);
+                }
+                buf.append(", ");
+            }
+        }
+        Class sc = clazz.getSuperclass();
+        if (sc != null) {
+            addFieldValues(buf, obj, sc, classNamePrefix);
+        }
+    }
+
+    private static void addStaticFieldValues(StringBuilder buf,
+                                             Class clazz, boolean classNamePrefix) {
+        Field[] fields = getAllFields(clazz);
+        for (Field f : fields) {
+            int modifiers = f.getModifiers();
+            if (Modifier.isStatic(modifiers)) {
+                if (classNamePrefix) {
+                    buf.append(f.getDeclaringClass().getName());
+                    buf.append('.');
+                }
+                buf.append(f.getName());
+                buf.append('=');
+                try {
+                    buf.append(Strings.str(f.get(null)));
+                } catch (Exception exp) {
+                    throw translate(exp);
+                }
+                buf.append(", ");
+            }
+        }
+        Class sc = clazz.getSuperclass();
+        if (sc != null) {
+            addStaticFieldValues(buf, sc, classNamePrefix);
+        }
+    }
+
+    private static RuntimeException translate(Exception exp) {
+        if (exp instanceof RuntimeException) {
+            return (RuntimeException) exp;
+        } else {
+            return new RuntimeException(exp);
+        }
     }
 
     /********** Namespaced methods ******************/
@@ -3283,13 +3404,13 @@ public class BTraceUtils {
         /**
          * Tests whether this thread has been interrupted.  The <i>interrupted
          * status</i> of the thread is unaffected by this method.
-         *
+         * <p>
          * <p>A thread interruption ignored because a thread was not alive
          * at the time of the interrupt will be reflected by this method
          * returning false.
          *
          * @return <code>true</code> if this thread has been interrupted;
-         *         <code>false</code> otherwise.
+         * <code>false</code> otherwise.
          */
         public static boolean isInteruppted() {
             return Thread.currentThread().isInterrupted();
@@ -3307,7 +3428,7 @@ public class BTraceUtils {
          * atmost given number of frames.
          *
          * @param numFrames number of frames to be printed. When this is
-         *        negative all frames are printed.
+         *                  negative all frames are printed.
          */
         public static void jstack(int numFrames) {
             // passing '5' to skip our own frames to generate stack trace
@@ -3332,7 +3453,7 @@ public class BTraceUtils {
          * atmost given number of frames.
          *
          * @param numFrames number of frames to be printed. When this is
-         *        negative all frames are printed.
+         *                  negative all frames are printed.
          */
         public static void jstackAll(int numFrames) {
             jstackAll(1, numFrames);
@@ -3355,8 +3476,8 @@ public class BTraceUtils {
          * Returns the stack trace of the current thread as a String
          * but includes atmost the given number of frames.
          *
-         * @param  numFrames number of frames to be included. When this is
-         *         negative all frames are included.
+         * @param numFrames number of frames to be included. When this is
+         *                  negative all frames are included.
          * @return the stack trace as a String.
          */
         public static String jstackStr(int numFrames) {
@@ -3388,7 +3509,7 @@ public class BTraceUtils {
          * of all threads as a String.
          *
          * @param numFrames number of frames to be included. When this is
-         *        negative all frames are included.
+         *                  negative all frames are included.
          * @return the stack traces as a String.
          */
         public static String jstackAllStr(int numFrames) {
@@ -3467,7 +3588,7 @@ public class BTraceUtils {
         /**
          * Returns a reference to the currently executing thread object.
          *
-         * @return  the currently executing thread.
+         * @return the currently executing thread.
          */
         public static Thread currentThread() {
             return Thread.currentThread();
@@ -3495,17 +3616,17 @@ public class BTraceUtils {
         /**
          * Returns <tt>true</tt> if and only if the current thread holds the
          * monitor lock on the specified object.
-         *
+         * <p>
          * <p>This method is designed to allow a program to assert that
          * the current thread already holds a specified lock:
          * <pre>
          *     assert Thread.holdsLock(obj);
          * </pre>
          *
-         * @param  obj the object on which to test lock ownership
-         * @throws NullPointerException if obj is <tt>null</tt>
+         * @param obj the object on which to test lock ownership
          * @return <tt>true</tt> if the current thread holds the monitor lock on
-         *         the specified object.
+         * the specified object.
+         * @throws NullPointerException if obj is <tt>null</tt>
          */
         public static boolean holdsLock(Object obj) {
             return Thread.holdsLock(obj);
@@ -3523,7 +3644,7 @@ public class BTraceUtils {
          * stack trace of the deadlocked threads.
          *
          * @param stackTrace boolean flag to specify whether to
-         *        print stack traces of deadlocked threads or not.
+         *                   print stack traces of deadlocked threads or not.
          */
         public static void deadlocks(boolean stackTrace) {
             BTraceRuntime.deadlocks(stackTrace);
@@ -3633,9 +3754,10 @@ public class BTraceUtils {
         /**
          * Substring
          */
-        public static String substr(String str,  int start, int length) {
+        public static String substr(String str, int start, int length) {
             return str.substring(start, length);
         }
+
         public static String substr(String str, int start) {
             return str.substring(start);
         }
@@ -3646,8 +3768,8 @@ public class BTraceUtils {
          * code units</a> in the string.
          *
          * @param str String whose length is calculated.
-         * @return  the length of the sequence of characters represented by this
-         *          object.
+         * @return the length of the sequence of characters represented by this
+         * object.
          */
         public static int length(String str) {
             return str.length();
@@ -3667,11 +3789,8 @@ public class BTraceUtils {
         /**
          * Compiles the given regular expression into a pattern.  </p>
          *
-         * @param  regex
-         *         The expression to be compiled
-         *
-         * @throws  PatternSyntaxException
-         *          If the expression's syntax is invalid
+         * @param regex The expression to be compiled
+         * @throws PatternSyntaxException If the expression's syntax is invalid
          */
         public static Pattern regexp(String regex) {
             return Pattern.compile(regex);
@@ -3690,21 +3809,14 @@ public class BTraceUtils {
          * Compiles the given regular expression into a pattern with the given
          * flags.  </p>
          *
-         * @param  regex
-         *         The expression to be compiled
-         *
-         * @param  flags
-         *         Match flags, a bit mask that may include
-         *         {@link Pattern#CASE_INSENSITIVE}, {@link Pattern#MULTILINE}, {@link Pattern#DOTALL},
-         *         {@link Pattern#UNICODE_CASE}, {@link Pattern#CANON_EQ}, {@link Pattern#UNIX_LINES},
-         *         {@link Pattern#LITERAL} and {@link Pattern#COMMENTS}
-         *
-         * @throws  IllegalArgumentException
-         *          If bit values other than those corresponding to the defined
-         *          match flags are set in <tt>flags</tt>
-         *
-         * @throws  PatternSyntaxException
-         *          If the expression's syntax is invalid
+         * @param regex The expression to be compiled
+         * @param flags Match flags, a bit mask that may include
+         *              {@link Pattern#CASE_INSENSITIVE}, {@link Pattern#MULTILINE}, {@link Pattern#DOTALL},
+         *              {@link Pattern#UNICODE_CASE}, {@link Pattern#CANON_EQ}, {@link Pattern#UNIX_LINES},
+         *              {@link Pattern#LITERAL} and {@link Pattern#COMMENTS}
+         * @throws IllegalArgumentException If bit values other than those corresponding to the defined
+         *                                  match flags are set in <tt>flags</tt>
+         * @throws PatternSyntaxException   If the expression's syntax is invalid
          */
         public static Pattern regexp(String regex, int flags) {
             return Pattern.compile(regex, flags);
@@ -3730,28 +3842,23 @@ public class BTraceUtils {
         /**
          * Compiles the given regular expression and attempts to match the given
          * input against it.
-         *
+         * <p>
          * <p> An invocation of this convenience method of the form
-         *
+         * <p>
          * <blockquote><pre>
          * Pattern.matches(regex, input);</pre></blockquote>
-         *
+         * <p>
          * behaves in exactly the same way as the expression
-         *
+         * <p>
          * <blockquote><pre>
          * Pattern.compile(regex).matcher(input).matches()</pre></blockquote>
-         *
+         * <p>
          * <p> If a pattern is to be used multiple times, compiling it once and reusing
          * it will be more efficient than invoking this method each time.  </p>
          *
-         * @param  regex
-         *         The expression to be compiled
-         *
-         * @param  input
-         *         The character sequence to be matched
-         *
-         * @throws  PatternSyntaxException
-         *          If the expression's syntax is invalid
+         * @param regex The expression to be compiled
+         * @param input The character sequence to be matched
+         * @throws PatternSyntaxException If the expression's syntax is invalid
          */
         public static boolean matches(String regex, String input) {
             return Pattern.matches(regex, input);
@@ -3763,7 +3870,7 @@ public class BTraceUtils {
          * the string {@code "true"} will be returned, otherwise the
          * string {@code "false"} will be returned.
          *
-         * @param b	the boolean to be converted
+         * @param b the boolean to be converted
          * @return the string representation of the specified <code>boolean</code>
          */
         public static String str(boolean b) {
@@ -3787,8 +3894,8 @@ public class BTraceUtils {
          * specified integer. The argument is converted to signed decimal
          * representation and returned as a string.
          *
-         * @param   i   an integer to be converted.
-         * @return  a string representation of the argument in base&nbsp;10.
+         * @param i an integer to be converted.
+         * @return a string representation of the argument in base&nbsp;10.
          */
         public static String str(int i) {
             return Integer.toString(i);
@@ -3815,9 +3922,9 @@ public class BTraceUtils {
          * <code>'&#92;u0039'</code> and <code>'&#92;u0061'</code> through
          * <code>'&#92;u0066'</code>.
          *
-         * @param   i   an integer to be converted to a string.
-         * @return  the string representation of the unsigned integer value
-         *          represented by the argument in hexadecimal (base&nbsp;16).
+         * @param i an integer to be converted to a string.
+         * @return the string representation of the unsigned integer value
+         * represented by the argument in hexadecimal (base&nbsp;16).
          */
         public static String toHexString(int i) {
             return Integer.toHexString(i);
@@ -3828,8 +3935,8 @@ public class BTraceUtils {
          * <code>long</code>.  The argument is converted to signed decimal
          * representation and returned as a string.
          *
-         * @param   l a <code>long</code> to be converted.
-         * @return  a string representation of the argument in base&nbsp;10.
+         * @param l a <code>long</code> to be converted.
+         * @return a string representation of the argument in base&nbsp;10.
          */
         public static String str(long l) {
             return Long.toString(l);
@@ -3844,13 +3951,13 @@ public class BTraceUtils {
          * calling Object.toString() override. For non-bootstrap classes,
          * default toString() value [className@hashCode] is returned.
          *
-         * @param  obj the object whose string representation is returned
+         * @param obj the object whose string representation is returned
          * @return a string representation of the given object.
          */
         public static String str(Object obj) {
             if (obj == null) {
                 return "null";
-            } else if (obj instanceof String)	 {
+            } else if (obj instanceof String) {
                 return (String) obj;
             } else if (obj.getClass().getClassLoader() == null) {
                 try {
@@ -3885,10 +3992,10 @@ public class BTraceUtils {
          * <code>'&#92;u0039'</code> and  <code>'&#92;u0061'</code> through
          * <code>'&#92;u0066'</code>.
          *
-         * @param   l a <code>long</code> to be converted to a string.
-         * @return  the string representation of the unsigned <code>long</code>
-         * 		value represented by the argument in hexadecimal
-         *		(base&nbsp;16).
+         * @param l a <code>long</code> to be converted to a string.
+         * @return the string representation of the unsigned <code>long</code>
+         * value represented by the argument in hexadecimal
+         * (base&nbsp;16).
          */
         public static String toHexString(long l) {
             return Long.toHexString(l);
@@ -3901,43 +4008,43 @@ public class BTraceUtils {
          * <li>If the argument is NaN, the result is the string
          * &quot;<code>NaN</code>&quot;.
          * <li>Otherwise, the result is a string that represents the sign and
-         *     magnitude (absolute value) of the argument. If the sign is
-         *     negative, the first character of the result is
-         *     '<code>-</code>' (<code>'&#92;u002D'</code>); if the sign is
-         *     positive, no sign character appears in the result. As for
-         *     the magnitude <i>m</i>:
+         * magnitude (absolute value) of the argument. If the sign is
+         * negative, the first character of the result is
+         * '<code>-</code>' (<code>'&#92;u002D'</code>); if the sign is
+         * positive, no sign character appears in the result. As for
+         * the magnitude <i>m</i>:
          * <ul>
          * <li>If <i>m</i> is infinity, it is represented by the characters
-         *     <code>"Infinity"</code>; thus, positive infinity produces
-         *     the result <code>"Infinity"</code> and negative infinity
-         *     produces the result <code>"-Infinity"</code>.
+         * <code>"Infinity"</code>; thus, positive infinity produces
+         * the result <code>"Infinity"</code> and negative infinity
+         * produces the result <code>"-Infinity"</code>.
          * <li>If <i>m</i> is zero, it is represented by the characters
-         *     <code>"0.0"</code>; thus, negative zero produces the result
-         *     <code>"-0.0"</code> and positive zero produces the result
-         *     <code>"0.0"</code>.
+         * <code>"0.0"</code>; thus, negative zero produces the result
+         * <code>"-0.0"</code> and positive zero produces the result
+         * <code>"0.0"</code>.
          * <li> If <i>m</i> is greater than or equal to 10<sup>-3</sup> but
-         *      less than 10<sup>7</sup>, then it is represented as the
-         *      integer part of <i>m</i>, in decimal form with no leading
-         *      zeroes, followed by '<code>.</code>'
-         *      (<code>'&#92;u002E'</code>), followed by one or more
-         *      decimal digits representing the fractional part of
-         *      <i>m</i>.
+         * less than 10<sup>7</sup>, then it is represented as the
+         * integer part of <i>m</i>, in decimal form with no leading
+         * zeroes, followed by '<code>.</code>'
+         * (<code>'&#92;u002E'</code>), followed by one or more
+         * decimal digits representing the fractional part of
+         * <i>m</i>.
          * <li> If <i>m</i> is less than 10<sup>-3</sup> or greater than or
-         *      equal to 10<sup>7</sup>, then it is represented in
-         *      so-called "computerized scientific notation." Let <i>n</i>
-         *      be the unique integer such that 10<sup><i>n</i> </sup>&lt;=
-         *      <i>m</i> &lt; 10<sup><i>n</i>+1</sup>; then let <i>a</i>
-         *      be the mathematically exact quotient of <i>m</i> and
-         *      10<sup><i>n</i></sup> so that 1 &lt;= <i>a</i> &lt; 10.
-         *      The magnitude is then represented as the integer part of
-         *      <i>a</i>, as a single decimal digit, followed by
-         *      '<code>.</code>' (<code>'&#92;u002E'</code>), followed by
-         *      decimal digits representing the fractional part of
-         *      <i>a</i>, followed by the letter '<code>E</code>'
-         *      (<code>'&#92;u0045'</code>), followed by a representation
-         *      of <i>n</i> as a decimal integer, as produced by the
-         *      method <code>{@link
-         *      java.lang.Integer#toString(int)}</code>.
+         * equal to 10<sup>7</sup>, then it is represented in
+         * so-called "computerized scientific notation." Let <i>n</i>
+         * be the unique integer such that 10<sup><i>n</i> </sup>&lt;=
+         * <i>m</i> &lt; 10<sup><i>n</i>+1</sup>; then let <i>a</i>
+         * be the mathematically exact quotient of <i>m</i> and
+         * 10<sup><i>n</i></sup> so that 1 &lt;= <i>a</i> &lt; 10.
+         * The magnitude is then represented as the integer part of
+         * <i>a</i>, as a single decimal digit, followed by
+         * '<code>.</code>' (<code>'&#92;u002E'</code>), followed by
+         * decimal digits representing the fractional part of
+         * <i>a</i>, followed by the letter '<code>E</code>'
+         * (<code>'&#92;u0045'</code>), followed by a representation
+         * of <i>n</i> as a decimal integer, as produced by the
+         * method <code>{@link
+         * java.lang.Integer#toString(int)}</code>.
          * </ul>
          * </ul>
          * How many digits must be printed for the fractional part of
@@ -3955,7 +4062,7 @@ public class BTraceUtils {
          * <i>f</i> must be <code>0</code>.
          * <p>
          *
-         * @param   f   the float to be converted.
+         * @param f the float to be converted.
          * @return a string representation of the argument.
          */
         public static String str(float f) {
@@ -3967,7 +4074,7 @@ public class BTraceUtils {
          * argument. All characters mentioned below are ASCII characters.
          * <ul>
          * <li>If the argument is NaN, the result is the string
-         *     &quot;<code>NaN</code>&quot;.
+         * &quot;<code>NaN</code>&quot;.
          * <li>Otherwise, the result is a string that represents the sign and
          * magnitude (absolute value) of the argument. If the sign is negative,
          * the first character of the result is '<code>-</code>'
@@ -3978,18 +4085,18 @@ public class BTraceUtils {
          * <code>"Infinity"</code>; thus, positive infinity produces the result
          * <code>"Infinity"</code> and negative infinity produces the result
          * <code>"-Infinity"</code>.
-         *
+         * <p>
          * <li>If <i>m</i> is zero, it is represented by the characters
          * <code>"0.0"</code>; thus, negative zero produces the result
          * <code>"-0.0"</code> and positive zero produces the result
          * <code>"0.0"</code>.
-         *
+         * <p>
          * <li>If <i>m</i> is greater than or equal to 10<sup>-3</sup> but less
          * than 10<sup>7</sup>, then it is represented as the integer part of
          * <i>m</i>, in decimal form with no leading zeroes, followed by
          * '<code>.</code>' (<code>'&#92;u002E'</code>), followed by one or
          * more decimal digits representing the fractional part of <i>m</i>.
-         *
+         * <p>
          * <li>If <i>m</i> is less than 10<sup>-3</sup> or greater than or
          * equal to 10<sup>7</sup>, then it is represented in so-called
          * "computerized scientific notation." Let <i>n</i> be the unique
@@ -4019,7 +4126,7 @@ public class BTraceUtils {
          * significant bit of the significand of <i>d</i> must be <code>0</code>.
          * <p>
          *
-         * @param   d   the <code>double</code> to be converted.
+         * @param d the <code>double</code> to be converted.
          * @return a string representation of the argument.
          */
         public static String str(double d) {
@@ -4028,10 +4135,11 @@ public class BTraceUtils {
 
         /**
          * Safely creates a new instance of an appendable string buffer <br>
+         *
          * @param threadSafe Specifies whether the buffer should be thread safe
          * @return Returns either {@linkplain StringBuilder} or {@linkplain StringBuffer}
-         *         instance depending on whether the instance is required to be
-         *         thread safe or not, respectively.
+         * instance depending on whether the instance is required to be
+         * thread safe or not, respectively.
          * @since 1.2
          */
         public static Appendable newStringBuilder(boolean threadSafe) {
@@ -4041,6 +4149,7 @@ public class BTraceUtils {
         /**
          * Safely creates a new instance of an appendable string buffer <br>
          * The buffer will not be thread safe.
+         *
          * @return Returns a new instance of {@linkplain StringBuilder} class
          * @since 1.2
          */
@@ -4050,7 +4159,8 @@ public class BTraceUtils {
 
         /**
          * Appends a string to an appendable buffer created by {@linkplain BTraceUtils.Strings#newStringBuilder()}
-         * @param buffer The appendable buffer to append to
+         *
+         * @param buffer      The appendable buffer to append to
          * @param strToAppend The string to append
          * @return Returns the same appendable buffer instance
          * @since 1.2
@@ -4062,6 +4172,7 @@ public class BTraceUtils {
 
         /**
          * Checks the length of an appendable buffer created by {@linkplain BTraceUtils.Strings#newStringBuilder()}
+         *
          * @param buffer The appendable buffer instance
          * @return Returns the length of the text contained by the buffer
          * @since 1.2
@@ -4095,13 +4206,13 @@ public class BTraceUtils {
          * positive infinity.
          * <li>If the argument is positive zero or negative zero, then the
          * result is negative infinity.</ul>
-         *
+         * <p>
          * <p>The computed result must be within 1 ulp of the exact result.
          * Results must be semi-monotonic.
          *
-         * @param   a   a value
-         * @return  the value ln&nbsp;<code>a</code>, the natural logarithm of
-         *          <code>a</code>.
+         * @param a a value
+         * @return the value ln&nbsp;<code>a</code>, the natural logarithm of
+         * <code>a</code>.
          */
         public strictfp static double log(double a) {
             return Math.log(a);
@@ -4110,7 +4221,7 @@ public class BTraceUtils {
         /**
          * Returns the base 10 logarithm of a <code>double</code> value.
          * Special cases:
-         *
+         * <p>
          * <ul><li>If the argument is NaN or less than zero, then the result
          * is NaN.
          * <li>If the argument is positive infinity, then the result is
@@ -4120,12 +4231,12 @@ public class BTraceUtils {
          * <li> If the argument is equal to 10<sup><i>n</i></sup> for
          * integer <i>n</i>, then the result is <i>n</i>.
          * </ul>
-         *
+         * <p>
          * <p>The computed result must be within 1 ulp of the exact result.
          * Results must be semi-monotonic.
          *
-         * @param   a   a value
-         * @return  the base 10 logarithm of  <code>a</code>.
+         * @param a a value
+         * @return the base 10 logarithm of  <code>a</code>.
          */
         public strictfp static double log10(double a) {
             return Math.log10(a);
@@ -4139,13 +4250,13 @@ public class BTraceUtils {
          * positive infinity.
          * <li>If the argument is negative infinity, then the result is
          * positive zero.</ul>
-         *
+         * <p>
          * <p>The computed result must be within 1 ulp of the exact result.
          * Results must be semi-monotonic.
          *
-         * @param   a   the exponent to raise <i>e</i> to.
-         * @return  the value <i>e</i><sup><code>a</code></sup>,
-         *          where <i>e</i> is the base of the natural logarithms.
+         * @param a the exponent to raise <i>e</i> to.
+         * @return the value <i>e</i><sup><code>a</code></sup>,
+         * where <i>e</i> is the base of the natural logarithms.
          */
         public strictfp static double exp(double a) {
             return Math.exp(a);
@@ -4155,9 +4266,9 @@ public class BTraceUtils {
          * Returns <code>true</code> if the specified number is a
          * Not-a-Number (NaN) value, <code>false</code> otherwise.
          *
-         * @param   d  the value to be tested.
-         * @return  <code>true</code> if the value of the argument is NaN;
-         *          <code>false</code> otherwise.
+         * @param d the value to be tested.
+         * @return <code>true</code> if the value of the argument is NaN;
+         * <code>false</code> otherwise.
          */
         public static boolean isNaN(double d) {
             return Double.isNaN(d);
@@ -4167,9 +4278,9 @@ public class BTraceUtils {
          * Returns <code>true</code> if the specified number is a
          * Not-a-Number (NaN) value, <code>false</code> otherwise.
          *
-         * @param   f the value to be tested.
-         * @return  <code>true</code> if the value of the argument is NaN;
-         *          <code>false</code> otherwise.
+         * @param f the value to be tested.
+         * @return <code>true</code> if the value of the argument is NaN;
+         * <code>false</code> otherwise.
          */
         public static boolean isNaN(float f) {
             return Float.isNaN(f);
@@ -4179,9 +4290,9 @@ public class BTraceUtils {
          * Returns <code>true</code> if the specified number is infinitely
          * large in magnitude, <code>false</code> otherwise.
          *
-         * @param   d the value to be tested.
-         * @return  <code>true</code> if the value of the argument is positive
-         *          infinity or negative infinity; <code>false</code> otherwise.
+         * @param d the value to be tested.
+         * @return <code>true</code> if the value of the argument is positive
+         * infinity or negative infinity; <code>false</code> otherwise.
          */
         public static boolean isInfinite(double d) {
             return Double.isInfinite(d);
@@ -4191,9 +4302,9 @@ public class BTraceUtils {
          * Returns <code>true</code> if the specified number is infinitely
          * large in magnitude, <code>false</code> otherwise.
          *
-         * @param   f the value to be tested.
-         * @return  <code>true</code> if the value of the argument is positive
-         *          infinity or negative infinity; <code>false</code> otherwise.
+         * @param f the value to be tested.
+         * @return <code>true</code> if the value of the argument is positive
+         * infinity or negative infinity; <code>false</code> otherwise.
          */
         public static boolean isInfinite(float f) {
             return Float.isInfinite(f);
@@ -4209,9 +4320,9 @@ public class BTraceUtils {
          * Example: {@code Boolean.parseBoolean("True")} returns <tt>true</tt>.<br>
          * Example: {@code Boolean.parseBoolean("yes")} returns <tt>false</tt>.
          *
-         * @param      s   the <code>String</code> containing the boolean
-         *                 representation to be parsed
-         * @return     the boolean represented by the string argument
+         * @param s the <code>String</code> containing the boolean
+         *          representation to be parsed
+         * @return the boolean represented by the string argument
          */
         public static boolean parseBoolean(String s) {
             return Boolean.parseBoolean(s);
@@ -4225,10 +4336,10 @@ public class BTraceUtils {
          * indicate a negative value. The resulting <code>byte</code> value is
          * returned.
          *
-         * @param s		a <code>String</code> containing the
-         *                  <code>byte</code> representation to be parsed
-         * @return 		the <code>byte</code> value represented by the
-         *                  argument in decimal
+         * @param s a <code>String</code> containing the
+         *          <code>byte</code> representation to be parsed
+         * @return the <code>byte</code> value represented by the
+         * argument in decimal
          */
         public static byte parseByte(String s) {
             return Byte.parseByte(s);
@@ -4242,10 +4353,10 @@ public class BTraceUtils {
          * indicate a negative value. The resulting <code>short</code> value is
          * returned.
          *
-         * @param s		a <code>String</code> containing the <code>short</code>
-         *                  representation to be parsed
-         * @return          the <code>short</code> value represented by the
-         *                  argument in decimal.
+         * @param s a <code>String</code> containing the <code>short</code>
+         *          representation to be parsed
+         * @return the <code>short</code> value represented by the
+         * argument in decimal.
          */
         public static short parseShort(String s) {
             return Short.parseShort(s);
@@ -4258,9 +4369,9 @@ public class BTraceUtils {
          * (<code>'&#92;u002D'</code>) to indicate a negative value. The resulting
          * integer value is returned.
          *
-         * @param s	   a <code>String</code> containing the <code>int</code>
-         *             representation to be parsed
-         * @return     the integer value represented by the argument in decimal.
+         * @param s a <code>String</code> containing the <code>int</code>
+         *          representation to be parsed
+         * @return the integer value represented by the argument in decimal.
          */
         public static int parseInt(String s) {
             return Integer.parseInt(s);
@@ -4280,10 +4391,10 @@ public class BTraceUtils {
          * of the string as a type indicator, as would be permitted in
          * Java programming language source code.
          *
-         * @param      s   a <code>String</code> containing the <code>long</code>
-         *             representation to be parsed
-         * @return     the <code>long</code> represented by the argument in
-         *		   decimal.
+         * @param s a <code>String</code> containing the <code>long</code>
+         *          representation to be parsed
+         * @return the <code>long</code> represented by the argument in
+         * decimal.
          */
         public static long parseLong(String s) {
             return Long.parseLong(s);
@@ -4294,9 +4405,9 @@ public class BTraceUtils {
          * represented by the specified <code>String</code>, as performed
          * by the <code>valueOf</code> method of class <code>Float</code>.
          *
-         * @param      s   the string to be parsed.
+         * @param s the string to be parsed.
          * @return the <code>float</code> value represented by the string
-         *         argument.
+         * argument.
          */
         public static float parseFloat(String s) {
             return Float.parseFloat(s);
@@ -4308,9 +4419,9 @@ public class BTraceUtils {
          * by the <code>valueOf</code> methcod of class
          * <code>Double</code>.
          *
-         * @param      s   the string to be parsed.
+         * @param s the string to be parsed.
          * @return the <code>double</code> value represented by the string
-         *         argument.
+         * argument.
          */
         public static double parseDouble(String s) {
             return Double.parseDouble(s);
@@ -4324,7 +4435,7 @@ public class BTraceUtils {
          * is <tt>true</tt>, this method returns <tt>Boolean.TRUE</tt>;
          * if it is <tt>false</tt>, this method returns <tt>Boolean.FALSE</tt>.
          *
-         * @param  b a boolean value.
+         * @param b a boolean value.
          * @return a <tt>Boolean</tt> instance representing <tt>b</tt>.
          */
         public static Boolean box(boolean b) {
@@ -4335,7 +4446,7 @@ public class BTraceUtils {
          * Returns a <tt>Character</tt> instance representing the specified
          * <tt>char</tt> value.
          *
-         * @param  c a char value.
+         * @param c a char value.
          * @return a <tt>Character</tt> instance representing <tt>c</tt>.
          */
         public static Character box(char c) {
@@ -4346,7 +4457,7 @@ public class BTraceUtils {
          * Returns a <tt>Byte</tt> instance representing the specified
          * <tt>byte</tt> value.
          *
-         * @param  b a byte value.
+         * @param b a byte value.
          * @return a <tt>Byte</tt> instance representing <tt>b</tt>.
          */
         public static Byte box(byte b) {
@@ -4357,7 +4468,7 @@ public class BTraceUtils {
          * Returns a <tt>Short</tt> instance representing the specified
          * <tt>short</tt> value.
          *
-         * @param  s a short value.
+         * @param s a short value.
          * @return a <tt>Short</tt> instance representing <tt>s</tt>.
          */
         public static Short box(short s) {
@@ -4368,7 +4479,7 @@ public class BTraceUtils {
          * Returns a <tt>Integer</tt> instance representing the specified
          * <tt>int</tt> value.
          *
-         * @param  i an <code>int</code> value.
+         * @param i an <code>int</code> value.
          * @return a <tt>Integer</tt> instance representing <tt>i</tt>.
          */
         public static Integer box(int i) {
@@ -4379,7 +4490,7 @@ public class BTraceUtils {
          * Returns a <tt>Long</tt> instance representing the specified
          * <tt>long</tt> value.
          *
-         * @param  l a long value.
+         * @param l a long value.
          * @return a <tt>Long</tt> instance representing <tt>l</tt>.
          */
         public static Long box(long l) {
@@ -4390,7 +4501,7 @@ public class BTraceUtils {
          * Returns a <tt>Float</tt> instance representing the specified
          * <tt>float</tt> value.
          *
-         * @param  f a float value.
+         * @param f a float value.
          * @return a <tt>Float</tt> instance representing <tt>f</tt>.
          */
         public static Float box(float f) {
@@ -4401,7 +4512,7 @@ public class BTraceUtils {
          * Returns a <tt>Double</tt> instance representing the specified
          * <tt>double</tt> value.
          *
-         * @param  d a double value.
+         * @param d a double value.
          * @return a <tt>Double</tt> instance representing <tt>d</tt>.
          */
         public static Double box(double d) {
@@ -4415,7 +4526,7 @@ public class BTraceUtils {
          * primitive.
          *
          * @param b the Boolean object whose value is returned.
-         * @return  the primitive <code>boolean</code> value of the object.
+         * @return the primitive <code>boolean</code> value of the object.
          */
         public static boolean unbox(Boolean b) {
             return b;
@@ -4426,7 +4537,7 @@ public class BTraceUtils {
          * primitive.
          *
          * @param ch the Character object whose value is returned.
-         * @return  the primitive <code>char</code> value of the object.
+         * @return the primitive <code>char</code> value of the object.
          */
         public static char unbox(Character ch) {
             return ch;
@@ -4436,7 +4547,7 @@ public class BTraceUtils {
          * Returns the value of the specified Byte as a <code>byte</code>.
          *
          * @param b Byte that is unboxed
-         * @return  the byte value represented by the <code>Byte</code>.
+         * @return the byte value represented by the <code>Byte</code>.
          */
         public static byte unbox(Byte b) {
             return b;
@@ -4446,7 +4557,7 @@ public class BTraceUtils {
          * Returns the short value represented by <code>Short</code>.
          *
          * @param s Short that is unboxed.
-         * @return  the short value represented by the <code>Short</code>.
+         * @return the short value represented by the <code>Short</code>.
          */
         public static short unbox(Short s) {
             return s;
@@ -4456,7 +4567,7 @@ public class BTraceUtils {
          * Returns the value of represented by <code>Integer</code>.
          *
          * @param i Integer that is unboxed.
-         * @return  the int value represented by the <code>Integer</code>.
+         * @return the int value represented by the <code>Integer</code>.
          */
         public static int unbox(Integer i) {
             return i;
@@ -4466,7 +4577,7 @@ public class BTraceUtils {
          * Returns the long value represented by the specified <code>Long</code>.
          *
          * @param l Long to be unboxed.
-         * @return  the long value represented by the <code>Long</code>.
+         * @return the long value represented by the <code>Long</code>.
          */
         public static long unbox(Long l) {
             return l;
@@ -4476,7 +4587,7 @@ public class BTraceUtils {
          * Returns the float value represented by the specified <code>Float</code>.
          *
          * @param f Float to be unboxed.
-         * @return  the float value represented by the <code>Float</code>.
+         * @return the float value represented by the <code>Float</code>.
          */
         public static float unbox(Float f) {
             return f;
@@ -4505,8 +4616,8 @@ public class BTraceUtils {
          * operating systems measure time in units of tens of
          * milliseconds.
          *
-         * @return  the difference, measured in milliseconds, between
-         *          the current time and midnight, January 1, 1970 UTC.
+         * @return the difference, measured in milliseconds, between
+         * the current time and midnight, January 1, 1970 UTC.
          */
         public static long millis() {
             return java.lang.System.currentTimeMillis();
@@ -4515,7 +4626,7 @@ public class BTraceUtils {
         /**
          * Returns the current value of the most precise available system
          * timer, in nanoseconds.
-         *
+         * <p>
          * <p>This method can only be used to measure elapsed time and is
          * not related to any other notion of system or wall-clock time.
          * The value returned represents nanoseconds since some fixed but
@@ -4535,6 +4646,7 @@ public class BTraceUtils {
 
         /**
          * <p>Generates a string timestamp (current date&time)
+         *
          * @param format The format to be used - see {@linkplain SimpleDateFormat}
          * @return Returns a string representing current date&time
          * @since 1.1
@@ -4545,6 +4657,7 @@ public class BTraceUtils {
 
         /**
          * <p>Generates a string timestamp (current date&time) in the default system format
+         *
          * @return Returns a string representing current date&time
          * @since 1.1
          */
@@ -4571,11 +4684,11 @@ public class BTraceUtils {
             return BTraceRuntime.newDeque();
         }
 
-        public static <K,V> void putAll(Map<K, V> src, Map<K, V> dst) {
+        public static <K, V> void putAll(Map<K, V> src, Map<K, V> dst) {
             BTraceRuntime.putAll(src, dst);
         }
 
-        public static <K,V> void copy(Map<K, V> src, Map<K, V> dst) {
+        public static <K, V> void copy(Map<K, V> src, Map<K, V> dst) {
             BTraceRuntime.copy(src, dst);
         }
 
@@ -4623,7 +4736,7 @@ public class BTraceUtils {
 
         // operations on collections
         public static <E> int size(Collection<E> coll) {
-           return BTraceRuntime.size(coll);
+            return BTraceRuntime.size(coll);
         }
 
         public static <E> boolean isEmpty(Collection<E> coll) {
@@ -4644,7 +4757,7 @@ public class BTraceUtils {
         }
 
         public static <E> Object[] toArray(Collection<E> collection) {
-        	return BTraceRuntime.toArray(collection);
+            return BTraceRuntime.toArray(collection);
         }
 
         // operations on Deque
@@ -4709,7 +4822,7 @@ public class BTraceUtils {
         /**
          * Sets to the given value to the given AtomicInteger.
          *
-         * @param ai AtomicInteger whose value is set.
+         * @param ai       AtomicInteger whose value is set.
          * @param newValue the new value
          */
         public static void set(AtomicInteger ai, int newValue) {
@@ -4719,7 +4832,7 @@ public class BTraceUtils {
         /**
          * Eventually sets to the given value to the given AtomicInteger.
          *
-         * @param ai AtomicInteger whose value is lazily set.
+         * @param ai       AtomicInteger whose value is lazily set.
          * @param newValue the new value
          */
         public static void lazySet(AtomicInteger ai, int newValue) {
@@ -4730,7 +4843,7 @@ public class BTraceUtils {
          * Atomically sets the value of given AtomitInteger to the given
          * updated value if the current value {@code ==} the expected value.
          *
-         * @param ai AtomicInteger whose value is compared and set.
+         * @param ai     AtomicInteger whose value is compared and set.
          * @param expect the expected value
          * @param update the new value
          * @return true if successful. False return indicates that
@@ -4743,12 +4856,12 @@ public class BTraceUtils {
         /**
          * Atomically sets the value to the given updated value
          * if the current value {@code ==} the expected value.
-         *
+         * <p>
          * <p>May <a href="package-summary.html#Spurious">fail spuriously</a>
          * and does not provide ordering guarantees, so is only rarely an
          * appropriate alternative to {@code compareAndSet}.
          *
-         * @param ai AtomicInteger whose value is weakly compared and set.
+         * @param ai     AtomicInteger whose value is weakly compared and set.
          * @param expect the expected value
          * @param update the new value
          * @return true if successful.
@@ -4803,7 +4916,7 @@ public class BTraceUtils {
         /**
          * Atomically adds the given value to the current value.
          *
-         * @param ai AtomicInteger whose value is added to.
+         * @param ai    AtomicInteger whose value is added to.
          * @param delta the value to add
          * @return the previous value
          */
@@ -4814,7 +4927,7 @@ public class BTraceUtils {
         /**
          * Atomically adds the given value to the current value.
          *
-         * @param ai AtomicInteger whose value is added to.
+         * @param ai    AtomicInteger whose value is added to.
          * @param delta the value to add
          * @return the updated value
          */
@@ -4825,7 +4938,7 @@ public class BTraceUtils {
         /**
          * Atomically sets to the given value and returns the old value.
          *
-         * @param ai AtomicInteger whose value is set.
+         * @param ai       AtomicInteger whose value is set.
          * @param newValue the new value
          * @return the previous value
          */
@@ -4857,7 +4970,7 @@ public class BTraceUtils {
         /**
          * Sets to the given value.
          *
-         * @param al AtomicLong whose value is set.
+         * @param al       AtomicLong whose value is set.
          * @param newValue the new value
          */
         public static void set(AtomicLong al, long newValue) {
@@ -4867,7 +4980,7 @@ public class BTraceUtils {
         /**
          * Eventually sets to the given value to the given AtomicLong.
          *
-         * @param al AtomicLong whose value is set.
+         * @param al       AtomicLong whose value is set.
          * @param newValue the new value
          */
         public static void lazySet(AtomicLong al, long newValue) {
@@ -4878,7 +4991,7 @@ public class BTraceUtils {
          * Atomically sets the value to the given updated value
          * if the current value {@code ==} the expected value.
          *
-         * @param al AtomicLong whose value is compared and set.
+         * @param al     AtomicLong whose value is compared and set.
          * @param expect the expected value
          * @param update the new value
          * @return true if successful. False return indicates that
@@ -4891,12 +5004,12 @@ public class BTraceUtils {
         /**
          * Atomically sets the value to the given updated value
          * if the current value {@code ==} the expected value.
-         *
+         * <p>
          * <p>May fail spuriously
          * and does not provide ordering guarantees, so is only rarely an
          * appropriate alternative to {@code compareAndSet}.
          *
-         * @param al AtomicLong whose value is compared and set.
+         * @param al     AtomicLong whose value is compared and set.
          * @param expect the expected value
          * @param update the new value
          * @return true if successful.
@@ -4949,7 +5062,7 @@ public class BTraceUtils {
         /**
          * Atomically adds the given value to the current value.
          *
-         * @param al AtomicLong whose value is added to.
+         * @param al    AtomicLong whose value is added to.
          * @param delta the value to add
          * @return the previous value
          */
@@ -4960,7 +5073,7 @@ public class BTraceUtils {
         /**
          * Atomically adds the given value to the current value.
          *
-         * @param al AtomicLong whose value is added to
+         * @param al    AtomicLong whose value is added to
          * @param delta the value to add
          * @return the updated value
          */
@@ -4971,7 +5084,7 @@ public class BTraceUtils {
         /**
          * Atomically sets to the given value and returns the old value.
          *
-         * @param al AtomicLong that is set.
+         * @param al       AtomicLong that is set.
          * @param newValue the new value
          * @return the previous value
          */
@@ -5052,7 +5165,7 @@ public class BTraceUtils {
          * aggregated value for each unique aggregation key.
          *
          * @param aggregation the aggregation to which the value should be added
-         * @param key the grouping aggregation key
+         * @param key         the grouping aggregation key
          */
         public static void addToAggregation(Aggregation aggregation, AggregationKey key, long value) {
             BTraceRuntime.addToAggregation(aggregation, key, value);
@@ -5071,15 +5184,15 @@ public class BTraceUtils {
         /**
          * Removes all aggregated values from the aggregation except for the largest or smallest
          * <code>abs(count)</code> elements.
-         *
+         * <p>
          * <p>If <code>count</code> is positive, the largest aggregated values in the aggregation will be
          * preserved. If <code>count</code> is negative the smallest values will be preserved. If <code>count</code>
          * is zero then all elements will be removed.
-         *
+         * <p>
          * <p>Behavior is intended to be similar to the dtrace <code>trunc()</code> function.
          *
          * @param aggregation the aggregation to be truncated
-         * @param count the number of elements to preserve. If negative, the smallest <code>abs(count)</code> elements are preserved.
+         * @param count       the number of elements to preserve. If negative, the smallest <code>abs(count)</code> elements are preserved.
          */
         public static void truncateAggregation(Aggregation aggregation, int count) {
             BTraceRuntime.truncateAggregation(aggregation, count);
@@ -5097,8 +5210,8 @@ public class BTraceUtils {
             Aggregation[] aggregationArray = new Aggregation[aggregationList.size()];
             int index = 0;
             for (Aggregation a : aggregationList) {
-                    aggregationArray[index] = a;
-                    index++;
+                aggregationArray[index] = a;
+                index++;
             }
             BTraceRuntime.printAggregation(name, format, aggregationArray);
         }
@@ -5113,6 +5226,7 @@ public class BTraceUtils {
     public static class Profiling {
         /**
          * Creates a new {@linkplain Profiler} instance
+         *
          * @return A new {@linkplain Profiler} instance
          */
         public static Profiler newProfiler() {
@@ -5122,8 +5236,9 @@ public class BTraceUtils {
         /**
          * Creates a new {@linkplain Profiler} instance with the specified
          * expected count of the distinct methods to be recorded.
+         *
          * @param expectedBlockCnt The expected count of the distinct blocks
-         *                          to be recorded.
+         *                         to be recorded.
          * @return Returns a new {@linkplain Profiler} instance
          */
         public static Profiler newProfiler(int expectedBlockCnt) {
@@ -5132,7 +5247,8 @@ public class BTraceUtils {
 
         /**
          * Records the entry to a particular code block
-         * @param profiler The {@linkplain Profiler} instance to use
+         *
+         * @param profiler  The {@linkplain Profiler} instance to use
          * @param blockName The block identifier
          */
         public static void recordEntry(Profiler profiler, String blockName) {
@@ -5141,9 +5257,10 @@ public class BTraceUtils {
 
         /**
          * Records the exit out of a particular code block
-         * @param profiler The {@linkplain Profiler} instance to use
+         *
+         * @param profiler  The {@linkplain Profiler} instance to use
          * @param blockName The block identifier
-         * @param duration The time spent in the mentioned block
+         * @param duration  The time spent in the mentioned block
          */
         public static void recordExit(Profiler profiler, String blockName, long duration) {
             BTraceRuntime.recordExit(profiler, blockName, duration);
@@ -5151,13 +5268,14 @@ public class BTraceUtils {
 
         /**
          * Creates a new snapshot of the profiling metrics collected sofar
+         *
          * @param profiler The {@linkplain Profiler} instance to use
          * @return Returns an immutable snapshot of the profiling metrics in
-         *         the form of a map where the key is the block name and
-         *         the value is a map of metrics names and the appropriate
-         *         values<br>
-         *         The supported metrics names are: "selfTime", "wallTime" and
-         *         "invocations"
+         * the form of a map where the key is the block name and
+         * the value is a map of metrics names and the appropriate
+         * values<br>
+         * The supported metrics names are: "selfTime", "wallTime" and
+         * "invocations"
          */
         public static Profiler.Snapshot snapshot(Profiler profiler) {
             return BTraceRuntime.snapshot(profiler);
@@ -5253,8 +5371,8 @@ public class BTraceUtils {
          * this method returns <code>null</code>.
          *
          * @param ref reference object whose referent is returned.
-         * @return	 The object to which the reference refers, or
-         *		 <code>null</code> if the reference object has been cleared.
+         * @return The object to which the reference refers, or
+         * <code>null</code> if the reference object has been cleared.
          */
         public static Object deref(Reference ref) {
             if (ref.getClass().getClassLoader() == null) {
@@ -5273,7 +5391,7 @@ public class BTraceUtils {
         /**
          * Returns the runtime class of the given Object.
          *
-         * @param  obj the Object whose Class is returned
+         * @param obj the Object whose Class is returned
          * @return the Class object of given object
          */
         public static Class classOf(Object obj) {
@@ -5283,7 +5401,7 @@ public class BTraceUtils {
         /**
          * Returns the Class object representing the class or interface
          * that declares the field represented by the given Field object.
-
+         *
          * @param field whose declaring Class is returned
          */
         public static Class declaringClass(Field field) {
@@ -5300,7 +5418,7 @@ public class BTraceUtils {
         /**
          * Returns the name of the Field object.
          *
-         * @param  field Field for which name is returned
+         * @param field Field for which name is returned
          * @return name of the given field
          */
         public static String name(Field field) {
@@ -5310,7 +5428,7 @@ public class BTraceUtils {
         /**
          * Returns the type of the Field object.
          *
-         * @param  field Field for which type is returned
+         * @param field Field for which type is returned
          * @return type of the given field
          */
         public static Class type(Field field) {
@@ -5382,9 +5500,9 @@ public class BTraceUtils {
          * raising a <code>ClassCastException.</code> It returns <code>false</code>
          * otherwise.
          *
-         * @param  clazz the class that is checked.
-         * @param  obj the object to check.
-         * @return  true if <code>obj</code> is an instance of the given class.
+         * @param clazz the class that is checked.
+         * @param obj   the object to check.
+         * @return true if <code>obj</code> is an instance of the given class.
          */
         public static boolean isInstance(Class clazz, Object obj) {
             return clazz.isInstance(obj);
@@ -5411,8 +5529,8 @@ public class BTraceUtils {
          * interface type.
          *
          * @param clazz the Class object to check.
-         * @return  <code>true</code> if the Class represents an interface;
-         *          <code>false</code> otherwise.
+         * @return <code>true</code> if the Class represents an interface;
+         * <code>false</code> otherwise.
          */
         public static boolean isInterface(Class clazz) {
             return clazz.isInterface();
@@ -5422,8 +5540,8 @@ public class BTraceUtils {
          * Determines if the given <code>Class</code> object represents an array class.
          *
          * @param clazz Class object to check.
-         * @return  <code>true</code> if the given object represents an array class;
-         *          <code>false</code> otherwise.
+         * @return <code>true</code> if the given object represents an array class;
+         * <code>false</code> otherwise.
          */
         public static boolean isArray(Class clazz) {
             return clazz.isArray();
@@ -5453,8 +5571,8 @@ public class BTraceUtils {
          * field if throwException parameter is <code>false</code>. Else throws a <code>RuntimeException</code>
          * when field is not found.
          *
-         * @param clazz Class whose field is returned
-         * @param name the name of the field
+         * @param clazz          Class whose field is returned
+         * @param name           the name of the field
          * @param throwException whether to throw exception on failing to find field or not
          * @return the <code>Field</code> object for the specified field in this
          * class
@@ -5471,7 +5589,7 @@ public class BTraceUtils {
          * when field is not found.
          *
          * @param clazz Class whose field is returned
-         * @param name the name of the field
+         * @param name  the name of the field
          * @return the <code>Field</code> object for the specified field in this
          * class
          */
@@ -5487,8 +5605,8 @@ public class BTraceUtils {
          * field if throwException parameter is <code>false</code>. Else throws a <code>RuntimeException</code>
          * when field is not found.
          *
-         * @param clazz Class whose field is returned
-         * @param name the name of the field
+         * @param clazz          Class whose field is returned
+         * @param name           the name of the field
          * @param throwException whether to throw exception on failing to find field or not
          * @return the <code>Field</code> object for the specified field in this
          * class
@@ -5506,7 +5624,7 @@ public class BTraceUtils {
          * when field is not found.
          *
          * @param clazz Class whose field is returned
-         * @param name the name of the field
+         * @param name  the name of the field
          * @return the <code>Field</code> object for the specified field in this
          * class
          */
@@ -5536,8 +5654,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>byte</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>byte</code> value
-         * from
+         * @param obj   the object to extract the <code>byte</code> value
+         *              from
          * @return the value of the <code>byte</code> field
          */
         public static byte getByte(Field field, Object obj) {
@@ -5552,10 +5670,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>byte</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>byte</code> value
-         * from
+         * @param obj  the object to extract the <code>byte</code> value
+         *             from
          * @return the value of the <code>byte</code> field
-         *
          * @since 1.3.5
          */
         public static byte getByte(String name, Object instance) {
@@ -5566,11 +5683,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>byte</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>byte</code> value
-         * from
+         *              from
          * @return the value of the <code>byte</code> field
-         *
          * @since 1.3.5
          */
         public static byte getByteStatic(String name, Class clazz) {
@@ -5597,8 +5713,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>short</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>short</code> value
-         * from
+         * @param obj   the object to extract the <code>short</code> value
+         *              from
          * @return the value of the <code>short</code> field
          */
         public static short getShort(Field field, Object obj) {
@@ -5613,10 +5729,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>short</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>short</code> value
-         * from
+         * @param obj  the object to extract the <code>short</code> value
+         *             from
          * @return the value of the <code>short</code> field
-         *
          * @since 1.3.5
          */
         public static short getShort(String name, Object instance) {
@@ -5627,11 +5742,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>short</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>short</code> value
-         * from
+         *              from
          * @return the value of the <code>short</code> field
-         *
          * @since 1.3.5
          */
         public static short getShortStatic(String name, Class clazz) {
@@ -5658,8 +5772,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>int</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>int</code> value
-         * from
+         * @param obj   the object to extract the <code>int</code> value
+         *              from
          * @return the value of the <code>int</code> field
          */
         public static int getInt(Field field, Object obj) {
@@ -5674,10 +5788,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>int</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>int</code> value
-         * from
+         * @param obj  the object to extract the <code>int</code> value
+         *             from
          * @return the value of the <code>int</code> field
-         *
          * @since 1.3.5
          */
         public static int getInt(String name, Object instance) {
@@ -5688,11 +5801,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a sttaic <code>int</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>int</code> value
-         * from
+         *              from
          * @return the value of the <code>int</code> field
-         *
          * @since 1.3.5
          */
         public static int getIntStatic(String name, Class clazz) {
@@ -5719,8 +5831,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>long</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>long</code> value
-         * from
+         * @param obj   the object to extract the <code>long</code> value
+         *              from
          * @return the value of the <code>long</code> field
          */
         public static long getLong(Field field, Object obj) {
@@ -5735,10 +5847,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>long</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>long</code> value
-         * from
+         * @param obj  the object to extract the <code>long</code> value
+         *             from
          * @return the value of the <code>long</code> field
-         *
          * @since 1.3.5
          */
         public static long getLong(String name, Object instance) {
@@ -5749,11 +5860,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>long</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>long</code> value
-         * from
+         *              from
          * @return the value of the <code>long</code> field
-         *
          * @since 1.3.5
          */
         public static long getLongStatic(String name, Class clazz) {
@@ -5780,8 +5890,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>float</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>float</code> value
-         * from
+         * @param obj   the object to extract the <code>float</code> value
+         *              from
          * @return the value of the <code>float</code> field
          */
         public static float getFloat(Field field, Object obj) {
@@ -5796,10 +5906,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>float</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>float</code> value
-         * from
+         * @param obj  the object to extract the <code>float</code> value
+         *             from
          * @return the value of the <code>float</code> field
-         *
          * @since 1.3.5
          */
         public static float getFloat(String name, Object instance) {
@@ -5810,11 +5919,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>float</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>float</code> value
-         * from
+         *              from
          * @return the value of the <code>float</code> field
-         *
          * @since 1.3.5
          */
         public static float getFloatStatic(String name, Class clazz) {
@@ -5841,8 +5949,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>double</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>double</code> value
-         * from
+         * @param obj   the object to extract the <code>double</code> value
+         *              from
          * @return the value of the <code>double</code> field
          */
         public static double getDouble(Field field, Object obj) {
@@ -5857,10 +5965,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>double</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>double</code> value
-         * from
+         * @param obj  the object to extract the <code>double</code> value
+         *             from
          * @return the value of the <code>double</code> field
-         *
          * @since 1.3.5
          */
         public static double getDouble(String name, Object instance) {
@@ -5871,11 +5978,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>double</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>double</code> value
-         * from
+         *              from
          * @return the value of the <code>double</code> field
-         *
          * @since 1.3.5
          */
         public static double getDouble(String name, Class clazz) {
@@ -5902,8 +6008,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>boolean</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>boolean</code> value
-         * from
+         * @param obj   the object to extract the <code>boolean</code> value
+         *              from
          * @return the value of the <code>boolean</code> field
          */
         public static boolean getBoolean(Field field, Object obj) {
@@ -5918,10 +6024,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>boolean</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>boolean</code> value
-         * from
+         * @param obj  the object to extract the <code>boolean</code> value
+         *             from
          * @return the value of the <code>boolean</code> field
-         *
          * @since 1.3.5
          */
         public static boolean getBoolean(String name, Object instance) {
@@ -5932,11 +6037,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>boolean</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>boolean</code> value
-         * from
+         *              from
          * @return the value of the <code>boolean</code> field
-         *
          * @since 1.3.5
          */
         public static boolean getBooleanStatic(String name, Class clazz) {
@@ -5963,8 +6067,8 @@ public class BTraceUtils {
          * Gets the value of an instance <code>char</code> field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the <code>char</code> value
-         * from
+         * @param obj   the object to extract the <code>char</code> value
+         *              from
          * @return the value of the <code>char</code> field
          */
         public static char getChar(Field field, Object obj) {
@@ -5979,10 +6083,9 @@ public class BTraceUtils {
          * Gets the value of an instance <code>char</code> field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the <code>char</code> value
-         * from
+         * @param obj  the object to extract the <code>char</code> value
+         *             from
          * @return the value of the <code>char</code> field
-         *
          * @since 1.3.5
          */
         public static char getChar(String name, Object instance) {
@@ -5993,11 +6096,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static <code>char</code> field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the <code>char</code> value
-         * from
+         *              from
          * @return the value of the <code>char</code> field
-         *
          * @since 1.3.5
          */
         public static char getCharStatic(String name, Class clazz) {
@@ -6024,8 +6126,8 @@ public class BTraceUtils {
          * Gets the value of an instance reference field.
          *
          * @param field Field object whose value is returned.
-         * @param obj the object to extract the reference value
-         * from
+         * @param obj   the object to extract the reference value
+         *              from
          * @return the value of the reference field
          */
         public static Object get(Field field, Object obj) {
@@ -6040,10 +6142,9 @@ public class BTraceUtils {
          * Gets the value of an instance reference field.
          *
          * @param name name of the field whose value is returned.
-         * @param obj the object to extract the reference value
-         * from
+         * @param obj  the object to extract the reference value
+         *             from
          * @return the value of the reference field
-         *
          * @since 1.3.5
          */
         public static Object get(String name, Object instance) {
@@ -6054,11 +6155,10 @@ public class BTraceUtils {
         /**
          * Gets the value of a static reference field.
          *
-         * @param name name of the field whose value is returned.
+         * @param name  name of the field whose value is returned.
          * @param clazz the class to extract the reference value
-         * from
+         *              from
          * @return the value of the reference field
-         *
          * @since 1.3.5
          */
         public static Object getStatic(String name, Class clazz) {
@@ -6082,9 +6182,9 @@ public class BTraceUtils {
          * prints name of the declaring class before each field - so that
          * if same named field in super class chain may be disambiguated.
          *
-         * @param obj Object whose fields are printed.
+         * @param obj             Object whose fields are printed.
          * @param classNamePrefix flag to tell whether to prefix field names
-         *        names by class name or not.
+         *                        names by class name or not.
          */
         public static void printFields(Object obj, boolean classNamePrefix) {
             StringBuilder buf = new StringBuilder();
@@ -6110,9 +6210,9 @@ public class BTraceUtils {
          * prints name of the declaring class before each field - so that
          * if same named field in super class chain may be disambigated.
          *
-         * @param clazz Class whose static fields are printed.
+         * @param clazz           Class whose static fields are printed.
          * @param classNamePrefix flag to tell whether to prefix field names
-         *        names by class name or not.
+         *                        names by class name or not.
          */
         public static void printStaticFields(Class clazz, boolean classNamePrefix) {
             StringBuilder buf = new StringBuilder();
@@ -6134,7 +6234,7 @@ public class BTraceUtils {
          * directory is created. Under that directory, a file of given
          * fileName is created.
          *
-         * @param obj object that has to be serialized.
+         * @param obj      object that has to be serialized.
          * @param fileName name of the file to which the object is serialized.
          */
         public static void serialize(Serializable obj, String fileName) {
@@ -6167,6 +6267,7 @@ public class BTraceUtils {
          * Under the current dir of traced app, ./btrace&lt;pid>/&lt;btrace-class>/
          * directory is created. Under that directory, a file of the given
          * fileName is created.
+         *
          * @since 1.1
          */
         public static void writeDOT(Object obj, String fileName) {
@@ -6179,6 +6280,57 @@ public class BTraceUtils {
      * @since 1.2
      */
     public static class Sys {
+        /**
+         * Returns n'th command line argument. <code>null</code> if not available.
+         *
+         * @param n command line argument index
+         * @return n'th command line argument
+         */
+        public static String $(int n) {
+            return BTraceRuntime.$(n);
+        }
+
+        /**
+         * Returns the process id of the currently BTrace'd process.
+         */
+        public static int getpid() {
+            int pid = -1;
+            try {
+                pid = Integer.parseInt($(0));
+            } catch (Exception ignored) {
+            }
+            return pid;
+        }
+
+        /**
+         * Returns the number of command line arguments.
+         */
+        public static int $length() {
+            return BTraceRuntime.$length();
+        }
+
+        /**
+         * Exits the BTrace session -- note that the particular client's tracing
+         * session exits and not the observed/traced program! After exit call,
+         * the trace action method terminates immediately and no other probe action
+         * method (of that client) will be called after that.
+         *
+         * @param exitCode exit value sent to the client
+         */
+        public static void exit(int exitCode) {
+            BTraceRuntime.exit(exitCode);
+        }
+
+        /**
+         * This is same as exit(int) except that the exit code
+         * is zero.
+         *
+         * @see #exit(int)
+         */
+        public static void exit() {
+            exit(0);
+        }
+
         /*
          * Wraps the environment related BTrace utility methods
          * @since 1.2
@@ -6187,13 +6339,12 @@ public class BTraceUtils {
             /**
              * Gets the system property indicated by the specified key.
              *
-             * @param      key   the name of the system property.
-             * @return     the string value of the system property,
-             *             or <code>null</code> if there is no property with that key.
-             *
-             * @exception  NullPointerException if <code>key</code> is
-             *             <code>null</code>.
-             * @exception  IllegalArgumentException if <code>key</code> is empty.
+             * @param key the name of the system property.
+             * @return the string value of the system property,
+             * or <code>null</code> if there is no property with that key.
+             * @throws NullPointerException     if <code>key</code> is
+             *                                  <code>null</code>.
+             * @throws IllegalArgumentException if <code>key</code> is empty.
              */
             public static String property(String key) {
                 return BTraceRuntime.property(key);
@@ -6220,9 +6371,9 @@ public class BTraceUtils {
              * environment variable is a system-dependent external named
              * value.
              *
-             * @param  name the name of the environment variable
+             * @param name the name of the environment variable
              * @return the string value of the variable, or <code>null</code>
-             *         if the variable is not defined in the system environment
+             * if the variable is not defined in the system environment
              * @throws NullPointerException if <code>name</code> is <code>null</code>
              */
             public static String getenv(String name) {
@@ -6249,14 +6400,14 @@ public class BTraceUtils {
 
             /**
              * Returns the number of processors available to the Java virtual machine.
-             *
+             * <p>
              * <p> This value may change during a particular invocation of the virtual
              * machine.  Applications that are sensitive to the number of available
              * processors should therefore occasionally poll this property and adjust
              * their resource usage appropriately. </p>
              *
-             * @return  the maximum number of processors available to the virtual
-             *          machine; never smaller than one
+             * @return the maximum number of processors available to the virtual
+             * machine; never smaller than one
              */
             public static long availableProcessors() {
                 return Runtime.getRuntime().availableProcessors();
@@ -6269,14 +6420,15 @@ public class BTraceUtils {
          */
         public static class Memory {
             // memory usage
+
             /**
              * Returns the amount of free memory in the Java Virtual Machine.
              * Calling the
              * <code>gc</code> method may result in increasing the value returned
              * by <code>freeMemory.</code>
              *
-             * @return  an approximation to the total amount of memory currently
-             *          available for future allocated objects, measured in bytes.
+             * @return an approximation to the total amount of memory currently
+             * available for future allocated objects, measured in bytes.
              */
             public static long freeMemory() {
                 return Runtime.getRuntime().freeMemory();
@@ -6290,8 +6442,8 @@ public class BTraceUtils {
              * Note that the amount of memory required to hold an object of any
              * given type may be implementation-dependent.
              *
-             * @return  the total amount of memory currently available for current
-             *          and future objects, measured in bytes.
+             * @return the total amount of memory currently available for current
+             * and future objects, measured in bytes.
              */
             public static long totalMemory() {
                 return Runtime.getRuntime().totalMemory();
@@ -6302,8 +6454,8 @@ public class BTraceUtils {
              * attempt to use.  If there is no inherent limit then the value {@link
              * java.lang.Long#MAX_VALUE} will be returned. </p>
              *
-             * @return  the maximum amount of memory that the virtual machine will
-             *          attempt to use, measured in bytes
+             * @return the maximum amount of memory that the virtual machine will
+             * attempt to use, measured in bytes
              */
             public static long maxMemory() {
                 return Runtime.getRuntime().maxMemory();
@@ -6386,8 +6538,8 @@ public class BTraceUtils {
              * fileName is created.
              *
              * @param fileName name of the file to which heap is dumped
-             * @param live flag that tells whether only live objects are
-             *             to be dumped or all objects are to be dumped.
+             * @param live     flag that tells whether only live objects are
+             *                 to be dumped or all objects are to be dumped.
              */
             public static void dumpHeap(String fileName, boolean live) {
                 BTraceRuntime.dumpHeap(fileName, live);
@@ -6411,6 +6563,7 @@ public class BTraceUtils {
             /**
              * Returns the total amount of time spent in GarbageCollection up to this point
              * since the application was started.
+             *
              * @return Returns the amount of overall time spent in GC
              */
             public static long getTotalGcTime() {
@@ -6420,6 +6573,7 @@ public class BTraceUtils {
             /**
              * Returns an overview of available memory pools <br>
              * It is possible to provide a text format the overview will use
+             *
              * @param poolFormat The text format string to format the overview. <br>
              *                   Exactly 5 arguments are passed to the format function. <br>
              *                   The format defaults to ";%1$s;%2$d;%3$d;%4$d;%5$d;Memory]"
@@ -6509,11 +6663,11 @@ public class BTraceUtils {
             /**
              * Returns the boot class path that is used by the bootstrap class loader
              * to search for class files.
-             *
+             * <p>
              * <p> Multiple paths in the boot class path are separated by the
              * path separator character of the platform on which the Java
              * virtual machine is running.
-             *
+             * <p>
              * <p>A Java virtual machine implementation may not support
              * the boot class path mechanism for the bootstrap class loader
              * to search for class files.
@@ -6521,8 +6675,7 @@ public class BTraceUtils {
              * to determine if the Java virtual machine supports this method.
              *
              * @return the boot class path.
-             * @throws java.lang.UnsupportedOperationException
-             *     if the Java virtual machine does not support this operation.
+             * @throws java.lang.UnsupportedOperationException if the Java virtual machine does not support this operation.
              */
             public static String bootClassPath() {
                 return BTraceRuntime.getBootClassPath();
@@ -6542,7 +6695,7 @@ public class BTraceUtils {
             /**
              * Returns the Java library path.
              * This method is equivalent to <b>Sys.getProperty("java.library.path")</b>.
-             *
+             * <p>
              * <p> Multiple paths in the Java library path are separated by the
              * path separator character of the platform of the Java virtual machine
              * being monitored.
@@ -6653,57 +6806,6 @@ public class BTraceUtils {
                 return BTraceRuntime.getCurrentThreadUserTime();
             }
         }
-
-        /**
-         * Returns n'th command line argument. <code>null</code> if not available.
-         *
-         * @param n command line argument index
-         * @return n'th command line argument
-         */
-        public static String $(int n) {
-            return BTraceRuntime.$(n);
-        }
-
-        /**
-         * Returns the process id of the currently BTrace'd process.
-         */
-        public static int getpid() {
-            int pid = -1;
-            try {
-                pid = Integer.parseInt($(0));
-            } catch (Exception ignored) {
-            }
-            return pid;
-        }
-
-        /**
-         * Returns the number of command line arguments.
-         */
-        public static int $length() {
-            return BTraceRuntime.$length();
-        }
-
-        /**
-         * Exits the BTrace session -- note that the particular client's tracing
-         * session exits and not the observed/traced program! After exit call,
-         * the trace action method terminates immediately and no other probe action
-         * method (of that client) will be called after that.
-         *
-         * @param exitCode exit value sent to the client
-         */
-        public static void exit(int exitCode) {
-            BTraceRuntime.exit(exitCode);
-        }
-
-        /**
-         * This is same as exit(int) except that the exit code
-         * is zero.
-         *
-         * @see #exit(int)
-         */
-        public static void exit() {
-            exit(0);
-        }
     }
 
     /*
@@ -6742,7 +6844,7 @@ public class BTraceUtils {
          * BTrace to DTrace communication chennal.
          * Raise DTrace USDT probe from BTrace.
          *
-         * @see #dtraceProbe(String,String,int,int)
+         * @see #dtraceProbe(String, String, int, int)
          */
         public static int probe(String str1, String str2) {
             return probe(str1, str2, -1, -1);
@@ -6752,7 +6854,7 @@ public class BTraceUtils {
          * BTrace to DTrace communication chennal.
          * Raise DTrace USDT probe from BTrace.
          *
-         * @see #dtraceProbe(String,String,int,int)
+         * @see #dtraceProbe(String, String, int, int)
          */
         public static int probe(String str1, String str2, int i1) {
             return probe(str1, str2, i1, -1);
@@ -6764,116 +6866,112 @@ public class BTraceUtils {
          *
          * @param str1 first String param to DTrace probe
          * @param str2 second String param to DTrace probe
-         * @param i1 first int param to DTrace probe
-         * @param i2 second int param to DTrace probe
+         * @param i1   first int param to DTrace probe
+         * @param i2   second int param to DTrace probe
          */
         public static int probe(String str1, String str2, int i1, int i2) {
             return BTraceRuntime.dtraceProbe(str1, str2, i1, i2);
         }
     }
 
-    // Internals only below this point
-    private static void checkStatic(Field field) {
-        if (! Modifier.isStatic(field.getModifiers())) {
-            throw new IllegalArgumentException(field.getName() +
-                " is not a static field");
-        }
-    }
+    /**
+     * A utility that can be used to measure the memory footprint of an arbitrary
+     * object graph. In a nutshell, the user gives a root object, and this class
+     * recursively and reflectively explores the object's references.
+     * <p>
+     * <p>This class can only be used if the containing jar has been given to the
+     * Java VM as an agent, as follows:
+     * {@code -javaagent:path/to/object-explorer.jar}
+     *
+     * @see #measureBytes(Object)
+     * @see #measureBytes(Object, Predicate)
+     */
+    private static class MemoryMeasurer {
 
-    private static Field getField(final Class clazz, final String name,
-            final boolean throwError) {
-        return AccessController.doPrivileged(new PrivilegedAction<Field>() {
+        /*
+         * The bare minimum memory footprint of an enum value, measured empirically.
+         * This should be subtracted for any enum value encountered, since it
+         * is static in nature.
+         */
+        private static final long costOfBareEnumConstant =
+                BTraceUtils.sizeof(DummyEnum.CONSTANT);
+
+        /**
+         * Measures the memory footprint, in bytes, of an object graph. The object
+         * graph is defined by a root object and whatever object can be reached
+         * through that, excluding static fields, {@code Class} objects, and
+         * fields defined in {@code enum}s (all these are considered shared values,
+         * which should not contribute to the cost of any single object graph).
+         * <p>
+         * <p>Equivalent to {@code measureBytes(rootObject,
+         * Predicates.alwaysTrue())}.
+         *
+         * @param rootObject the root object that defines the object graph to be
+         *                   measured
+         * @return the memory footprint, in bytes, of the object graph
+         */
+        public static long measureBytes(Object rootObject) {
+
+            return measureBytes(rootObject, Predicates.alwaysTrue());
+        }
+
+        /**
+         * Measures the memory footprint, in bytes, of an object graph. The object
+         * graph is defined by a root object and whatever object can be reached
+         * through that, excluding static fields, {@code Class} objects, and
+         * fields defined in {@code enum}s (all these are considered shared values,
+         * which should not contribute to the cost of any single object graph), and
+         * any object for which the user-provided predicate returns {@code false}.
+         *
+         * @param rootObject     the root object that defines the object graph to be
+         *                       measured
+         * @param objectAcceptor a predicate that returns {@code true} for objects
+         *                       to be explored (and treated as part of the object graph), or
+         *                       {@code false} to forbid the traversal to traverse the given object
+         * @return the memory footprint, in bytes, of the object graph
+         */
+        public static long measureBytes(Object rootObject, Predicate<Object> objectAcceptor) {
+            Preconditions.checkNotNull(objectAcceptor, "predicate");
+
+            Predicate<Chain> completePredicate = Predicates.and(ImmutableList.of(
+                    new ObjectExplorer.AtMostOncePredicate(),
+                    ObjectExplorer.notEnumFieldsOrClasses,
+                    Predicates.compose(objectAcceptor, ObjectExplorer.chainToObject)
+            ));
+
+            return ObjectExplorer.exploreObject(rootObject,
+                    new MemoryMeasurerVisitor(completePredicate));
+        }
+
+        private enum DummyEnum {
+            CONSTANT;
+        }
+
+        static private class MemoryMeasurerVisitor implements ObjectVisitor<Long> {
+            private final Predicate<Chain> predicate;
+            private long memory;
+
+            MemoryMeasurerVisitor(Predicate<Chain> predicate) {
+                this.predicate = predicate;
+            }
+
             @Override
-            public Field run() {
-                try {
-                    Field field = clazz.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (Exception exp) {
-                    if (throwError) {
-                       throw translate(exp);
-                    } else {
-                       return null;
+            public Traversal visit(Chain chain) {
+                if (predicate.apply(chain)) {
+                    Object o = chain.getValue();
+                    memory += BTraceUtils.sizeof(o);
+                    if (Enum.class.isAssignableFrom(o.getClass())) {
+                        memory -= costOfBareEnumConstant;
                     }
+                    return Traversal.EXPLORE;
                 }
+                return Traversal.SKIP;
             }
-        });
-    }
 
-    private static Field[] getAllFields(final Class clazz) {
-        return AccessController.doPrivileged(new PrivilegedAction<Field[]>() {
             @Override
-            public Field[] run() {
-                try {
-                    Field[] fields = clazz.getDeclaredFields();
-                    for (Field f : fields) {
-                        f.setAccessible(true);
-                    }
-                    return fields;
-                } catch (Exception exp) {
-                    throw translate(exp);
-                }
+            public Long result() {
+                return memory;
             }
-        });
-    }
-
-    private static void addFieldValues(StringBuilder buf, Object obj,
-        Class clazz,  boolean classNamePrefix) {
-        Field[] fields = getAllFields(clazz);
-        for (Field f : fields) {
-            int modifiers = f.getModifiers();
-            if (! Modifier.isStatic(modifiers)) {
-                if (classNamePrefix) {
-                    buf.append(f.getDeclaringClass().getName());
-                    buf.append('.');
-                }
-                buf.append(f.getName());
-                buf.append('=');
-                try {
-                    buf.append(Strings.str(f.get(obj)));
-                } catch (Exception exp) {
-                    throw translate(exp);
-                }
-                buf.append(", ");
-            }
-        }
-        Class sc = clazz.getSuperclass();
-        if (sc != null) {
-           addFieldValues(buf, obj, sc, classNamePrefix);
-        }
-    }
-
-    private static void addStaticFieldValues(StringBuilder buf,
-        Class clazz, boolean classNamePrefix) {
-        Field[] fields = getAllFields(clazz);
-        for (Field f : fields) {
-            int modifiers = f.getModifiers();
-            if (Modifier.isStatic(modifiers)) {
-                if (classNamePrefix) {
-                    buf.append(f.getDeclaringClass().getName());
-                    buf.append('.');
-                }
-                buf.append(f.getName());
-                buf.append('=');
-                try {
-                    buf.append(Strings.str(f.get(null)));
-                } catch (Exception exp) {
-                    throw translate(exp);
-                }
-                buf.append(", ");
-            }
-        }
-        Class sc = clazz.getSuperclass();
-        if (sc != null) {
-           addStaticFieldValues(buf, sc, classNamePrefix);
-        }
-    }
-
-    private static RuntimeException translate(Exception exp) {
-        if (exp instanceof RuntimeException) {
-            return (RuntimeException) exp;
-        } else {
-            return new RuntimeException(exp);
         }
     }
 }

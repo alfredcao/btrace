@@ -1,10 +1,8 @@
-package objectexplorer;
+package com.sun.btrace;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Lists;
-import objectexplorer.Chain.FieldChain;
-import objectexplorer.ObjectVisitor.Traversal;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.AccessibleObject;
@@ -34,7 +32,7 @@ public class ObjectExplorer {
 
         @Override
         public boolean apply(Chain chain) {
-            if (chain instanceof FieldChain && (((FieldChain) chain).getField().getModifiers() & Modifier.TRANSIENT) != 0) {
+            if (chain instanceof Chain.FieldChain && (((Chain.FieldChain) chain).getField().getModifiers() & Modifier.TRANSIENT) != 0) {
                 return false;
             } else {
                 return true;
@@ -108,7 +106,7 @@ public class ObjectExplorer {
         while (!stack.isEmpty()) {
             Chain chain = stack.pop();
             //the only place where the return value of visit() is considered
-            Traversal traversal = visitor.visit(chain);
+            ObjectVisitor.Traversal traversal = visitor.visit(chain);
             switch (traversal) {
                 case SKIP:
                     continue;

@@ -1,4 +1,4 @@
-package objectexplorer;
+package com.sun.btrace;
 
 /**
  * A visitor that controls an object traversal. Implementations
